@@ -1,0 +1,41 @@
+{
+  "name": "json-prep",
+  "title": "JSON 预处理",
+  "description": "先用 JS 清洗 / 反转义当前文本，再交给 json-editor 打开（无界面，执行完自动跳转）",
+  "version": "0.1.0",
+  "author": "kevinxia",
+  "main": "blank.html",
+  "preload": "preload.js",
+  "logo": "logo.png",
+  "features": [
+    {
+      "code": "prep-json",
+      "explain": "预处理后交给 json-editor 打开",
+      "cmds": [
+        {
+          "type": "regex",
+          "label": "JSON预处理 → json-editor",
+          "match": "/^[\\s\\S]*[\\{\\[][\\s\\S]*[\\}\\]]?[\\s\\S]*$/",
+          "minLength": 2
+        }
+      ]
+    },
+    {
+      "code": "prep-any",
+      "explain": "任意文本预处理后交给 json-editor",
+      "cmds": [
+        {
+          "type": "over",
+          "label": "文本预处理 → json-editor",
+          "minLength": 2,
+          "maxLength": 500000
+        }
+      ]
+    },
+    {
+      "code": "prep-clip",
+      "explain": "读剪贴板预处理后交给 json-editor",
+      "cmds": ["jj", "json预处理", "ypre"]
+    }
+  ]
+}

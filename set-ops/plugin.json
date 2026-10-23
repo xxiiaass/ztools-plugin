@@ -1,0 +1,23 @@
+{
+  "name": "set-ops",
+  "title": "文本集合运算",
+  "description": "左右各贴一段多行文本，做交集 / 并集 / 差集 / 排除运算，结果一键复制",
+  "version": "0.1.2",
+  "author": "kevinxia",
+  "main": "index.html",
+  "preload": "preload.js",
+  "logo": "logo.png",
+  "features": [
+    {
+      "code": "main",
+      "explain": "对两段文本做集合运算",
+      "cmds": [
+        "集合",
+        "setop",
+        "集合运算",
+        "文本对比",
+        "文本集合"
+      ]
+    }
+  ]
+}

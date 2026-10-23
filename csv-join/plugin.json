@@ -1,0 +1,31 @@
+{
+  "name": "csv-join",
+  "title": "CSV 关联",
+  "description": "选两个 CSV，自动解析列名，指定关联列后做内连接 / 左连接 / 右连接 / 全外连接 / 差集，结果可预览并导出",
+  "version": "0.1.1",
+  "author": "kevinxia",
+  "main": "index.html",
+  "preload": "preload.js",
+  "logo": "logo.png",
+  "features": [
+    {
+      "code": "main",
+      "explain": "把两个 CSV 按关联列拼起来",
+      "cmds": [
+        "csvjoin",
+        "csv",
+        "关联",
+        "csv关联",
+        "join",
+        {
+          "type": "files",
+          "label": "用 CSV 关联打开",
+          "fileType": "file",
+          "extensions": ["csv", "tsv", "txt"],
+          "minLength": 1,
+          "maxLength": 2
+        }
+      ]
+    }
+  ]
+}

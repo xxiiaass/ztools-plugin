@@ -1,0 +1,42 @@
+{
+  "name": "cls-log",
+  "title": "CLS 日志查询",
+  "description": "选中/粘贴一个 UUID，选择环境后用 Firefox 打开腾讯云 CLS 检索页",
+  "version": "0.1.0",
+  "author": "kevinxia",
+  "main": "index.html",
+  "preload": "preload.js",
+  "logo": "logo.png",
+  "features": [
+    {
+      "code": "open",
+      "explain": "用 CLS 检索这个 ID",
+      "cmds": [
+        {
+          "type": "regex",
+          "label": "CLS 日志查询",
+          "match": "/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/",
+          "minLength": 36
+        }
+      ]
+    },
+    {
+      "code": "open-any",
+      "explain": "从文本里提取 UUID 后检索",
+      "cmds": [
+        {
+          "type": "over",
+          "label": "CLS 日志查询（提取 UUID）",
+          "exclude": "/^(cls|CLS)/i",
+          "minLength": 8,
+          "maxLength": 5000
+        }
+      ]
+    },
+    {
+      "code": "open-clip",
+      "explain": "读剪贴板里的 UUID 后检索",
+      "cmds": ["cls", "CLS", "日志", "clslog"]
+    }
+  ]
+}

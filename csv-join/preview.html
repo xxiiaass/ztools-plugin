@@ -1,0 +1,857 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>CSV 关联</title>
+<style>
+  :root {
+    --bg: #ffffff; --bg-soft: #f6f7f9; --bg-hover: #eef0f4;
+    --fg: #1f2328; --fg-dim: #6b7280; --line: #e5e7eb;
+    --accent: #2e7cf6; --a: #2e7cf6; --b: #8b5cf6;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  }
+  html.dark {
+    --bg: #1a1b1e; --bg-soft: #22242a; --bg-hover: #2c2f36;
+    --fg: #e5e7eb; --fg-dim: #9ca3af; --line: #33363d;
+    --accent: #6ea8fe; --a: #6ea8fe; --b: #c4b5fd;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg); color: var(--fg);
+    font: 12px/1.5 -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  button, select { font-family: inherit; font-size: 12px; }
+
+  .files { flex: 0 0 auto; display: flex; gap: 8px; padding: 8px 10px 6px; }
+  .file { flex: 1 1 0; min-width: 0; border: 1px dashed var(--line); border-radius: 8px; padding: 6px 8px; }
+  .file.a { border-left: 3px solid var(--a); }
+  .file.b { border-left: 3px solid var(--b); }
+  .file.loaded { border-style: solid; }
+  .file > header { display: flex; align-items: center; gap: 6px; font-weight: 600; }
+  .file .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .file .meta { color: var(--fg-dim); font-weight: 400; }
+  .cols { margin-top: 5px; display: flex; flex-wrap: wrap; gap: 3px; max-height: 52px; overflow: auto; }
+  .col {
+    background: var(--bg-soft); border: 1px solid var(--line); border-radius: 4px;
+    padding: 0 5px; font-family: var(--mono); font-size: 11px; color: var(--fg-dim); white-space: nowrap;
+  }
+  .col.hit { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+  .setup { flex: 0 0 auto; display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+           padding: 0 10px 6px; }
+  .setup select { max-width: 170px; padding: 3px 5px; border: 1px solid var(--line);
+                  border-radius: 6px; background: var(--bg); color: var(--fg); }
+  .modes { flex: 0 0 auto; display: flex; flex-wrap: wrap; gap: 5px; padding: 0 10px 6px; }
+  .btn { border: 1px solid var(--line); background: var(--bg); color: var(--fg);
+         border-radius: 6px; padding: 4px 9px; cursor: pointer; }
+  .btn:hover { background: var(--bg-hover); }
+  .btn.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .spacer { flex: 1 1 auto; }
+
+  /* 结果列筛选 */
+  .colbar { flex: 0 0 auto; display: flex; flex-wrap: wrap; gap: 4px; align-items: center;
+            padding: 2px 10px 6px; border-top: 1px dashed var(--line); }
+  .colbar .lab { color: var(--fg-dim); margin-right: 2px; }
+  .pick {
+    display: inline-flex; align-items: center; gap: 3px; cursor: pointer;
+    border: 1px solid var(--line); border-radius: 4px; padding: 0 5px;
+    font-family: var(--mono); font-size: 11px; color: var(--fg-dim); background: var(--bg);
+    user-select: none;
+  }
+  .pick.a { border-left: 3px solid var(--a); }
+  .pick.b { border-left: 3px solid var(--b); }
+  .pick.on { background: var(--bg-soft); color: var(--fg); }
+  .pick.on.a { color: var(--a); }
+  .pick.on.b { color: var(--b); }
+  .pick input { margin: 0; }
+  .pick.empty-hdr { font-style: italic; }
+
+  .resbar { flex: 0 0 auto; display: flex; align-items: center; gap: 8px;
+            padding: 4px 10px 6px; border-top: 1px solid var(--line); }
+  .resbar .stat { color: var(--fg-dim); }
+  .resbar .stat b { color: var(--fg); }
+
+  .preview { flex: 1 1 auto; overflow: auto; padding: 0 10px 8px; min-height: 0; }
+  table { border-collapse: collapse; font-family: var(--mono); font-size: 11px; white-space: nowrap; }
+  th, td { border: 1px solid var(--line); padding: 2px 6px; text-align: left; }
+  th { background: var(--bg-soft); position: sticky; top: 0; z-index: 1; font-weight: 600; }
+  th.a { color: var(--a); } th.b { color: var(--b); }
+  td.empty { color: var(--fg-dim); font-style: italic; }
+  .hint { padding: 18px 4px; color: var(--fg-dim); text-align: center; line-height: 1.9; }
+  .err { margin: 10px 4px; padding: 8px; border-radius: 6px; background: #fee2e2; color: #991b1b; }
+  html.dark .err { background: #4c1d1d; color: #fca5a5; }
+  .toast { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%);
+           background: rgba(0,0,0,.82); color: #fff; padding: 5px 12px; border-radius: 6px;
+           opacity: 0; pointer-events: none; transition: opacity .18s; z-index: 9; }
+  .toast.show { opacity: 1; }
+  input[type=file] { display: none; }
+</style>
+</head>
+<body>
+
+<div class="files">
+  <div class="file a" id="boxA">
+    <header>
+      <span style="color:var(--a)">●</span><span>A</span>
+      <span class="name" id="nameA">未选择</span>
+      <span class="meta" id="metaA"></span>
+      <span class="spacer"></span>
+      <button class="btn" id="pickA" style="padding:2px 7px">选择</button>
+    </header>
+    <div class="cols" id="colsA"></div>
+  </div>
+  <div class="file b" id="boxB">
+    <header>
+      <span style="color:var(--b)">●</span><span>B</span>
+      <span class="name" id="nameB">未选择</span>
+      <span class="meta" id="metaB"></span>
+      <span class="spacer"></span>
+      <button class="btn" id="pickB" style="padding:2px 7px">选择</button>
+    </header>
+    <div class="cols" id="colsB"></div>
+  </div>
+</div>
+
+<div class="setup">
+  <span>关联：</span>
+  <select id="keyA"><option value="">A 的列…</option></select>
+  <span>=</span>
+  <select id="keyB"><option value="">B 的列…</option></select>
+  <button class="btn" id="guess">自动匹配同名列</button>
+  <label style="display:flex;align-items:center;gap:3px;color:var(--fg-dim)">
+    <input type="checkbox" id="trimKey" checked /> 关联值去空格
+  </label>
+  <span class="spacer"></span>
+  <button class="btn" id="swapFile">交换 A/B</button>
+  <button class="btn" id="clearAll">清空</button>
+</div>
+
+<div class="modes">
+  <button class="btn" data-mode="anb" title="只保留两边都能对上的行">交集 A∩B</button>
+  <button class="btn" data-mode="a.b" title="以 A 为主，B 对不上就留空">左连接 A·B</button>
+  <button class="btn" data-mode="b.a" title="以 B 为主，A 对不上就留空">右连接 B·A</button>
+  <button class="btn" data-mode="aub" title="两边所有键都保留">并集 A∪B</button>
+  <button class="btn" data-mode="a-b" title="A 里有、B 里没有的键">A 排除 B</button>
+  <button class="btn" data-mode="b-a" title="B 里有、A 里没有的键">B 排除 A</button>
+  <span class="spacer"></span>
+  <span id="modeHint" style="color:var(--fg-dim)"></span>
+</div>
+
+<div class="colbar" id="colbar" style="display:none">
+  <span class="lab">结果列：</span>
+  <span id="picks" style="display:flex;flex-wrap:wrap;gap:4px"></span>
+  <span class="spacer"></span>
+  <span class="lab" id="pickStat"></span>
+  <button class="btn" id="pickDefault" style="padding:2px 7px" title="保留 A 的全部列 + B 里不重名的列">推荐</button>
+  <button class="btn" id="pickAll" style="padding:2px 7px">全选</button>
+  <button class="btn" id="pickNone" style="padding:2px 7px">全不选</button>
+</div>
+
+<div class="resbar">
+  <span class="stat" id="stat">等待选择文件</span>
+  <span class="spacer"></span>
+  <button class="btn" id="btnRun">执行</button>
+  <button class="btn" id="btnSave">导出 CSV</button>
+  <button class="btn" id="btnCopy">复制结果</button>
+</div>
+
+<div class="preview" id="preview">
+  <div class="hint">选择两个 CSV 文件（也可以直接把文件拖进来）<br>解析出列名后，指定 A、B 的关联列，再选一种连接方式</div>
+</div>
+
+<div class="toast" id="toast"></div>
+<input type="file" id="fileA" accept=".csv,.tsv,.txt" />
+<input type="file" id="fileB" accept=".csv,.tsv,.txt" />
+
+<script>
+/* ===== 仅预览用：模拟 ZTools 宿主环境（打包时不含本文件） ===== */
+(function () {
+  var mem = {};
+  window.ztools = {
+    setExpendHeight: function () {},
+    isDarkColors: function () { return false; },
+    onThemeChange: function () {},
+    onPluginEnter: function () {},
+    copyText: function (t) { try { return navigator.clipboard.writeText(t); } catch (e) { return false; } },
+    dbStorage: {
+      getItem: function (k) { return Object.prototype.hasOwnProperty.call(mem, k) ? mem[k] : null; },
+      setItem: function (k, v) { mem[k] = String(v); },
+      removeItem: function (k) { delete mem[k]; }
+    },
+    showNotification: function (t) { console.log('[notify]', t); }
+  };
+  window.__bridge = {
+    readTextFile: function () { return ''; },
+    writeClipboard: function (t) {
+      try { var ta = document.createElement('textarea'); ta.value = String(t);
+        document.body.appendChild(ta); ta.select(); document.execCommand('copy');
+        document.body.removeChild(ta); return true; } catch (e) { return false; }
+    },
+    saveFile: function (name, content) {
+      try {
+        var blob = new Blob(['\ufeff' + String(content)], { type: 'text/csv;charset=utf-8' });
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(blob); a.download = name || 'csv-join.csv';
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        return a.download;
+      } catch (e) { return ''; }
+    },
+    writeTextFile: function () { return false; },
+    reveal: function () { return false; }
+  };
+})();
+</script>
+<script>
+(function () {
+  'use strict';
+
+  var Z = window.ztools || {};
+  var BR = window.__bridge || {};
+  var $ = function (id) { return document.getElementById(id); };
+
+  /* ══════════ CSV 解析（纯函数，可单测） ══════════ */
+
+  function detectDelimiter(text) {
+    var line = text.split(/\r\n|\n|\r/).filter(function (l) { return l.trim() !== ''; })[0] || '';
+    var cands = [',', '\t', ';', '|'];
+    var best = ',', bestCount = -1;
+    for (var i = 0; i < cands.length; i++) {
+      var n = line.split(cands[i]).length - 1;
+      if (n > bestCount) { bestCount = n; best = cands[i]; }
+    }
+    return best;
+  }
+
+  /** RFC4180 风格解析：支持引号、"" 转义、CRLF、跳过空行 */
+  function parseCsv(text, delim) {
+    var d = delim || ',';
+    if (text.charCodeAt(0) === 0xfeff) text = text.slice(1); // BOM
+    var rows = [];
+    var row = [], field = '';
+    var inQuotes = false, i = 0;
+    var hasContent = false;
+    while (i < text.length) {
+      var c = text[i];
+      if (inQuotes) {
+        if (c === '"') {
+          if (text[i + 1] === '"') { field += '"'; i += 2; continue; }
+          inQuotes = false; i++; continue;
+        }
+        field += c; i++; continue;
+      }
+      if (c === '"' && field === '') { inQuotes = true; i++; continue; }
+      if (c === d) { row.push(field); field = ''; hasContent = true; i++; continue; }
+      if (c === '\r') { i++; continue; }
+      if (c === '\n') {
+        row.push(field); field = '';
+        if (hasContent || row.join('') !== '') rows.push(row);
+        row = []; hasContent = false; i++; continue;
+      }
+      field += c; hasContent = true; i++;
+    }
+    if (field !== '' || hasContent || row.length) { row.push(field); rows.push(row); }
+    // 丢掉尾部全空行
+    while (rows.length && rows[rows.length - 1].join('').trim() === '') rows.pop();
+    return rows;
+  }
+
+  function stringifyCsv(rows) {
+    return rows.map(function (r) {
+      return r.map(function (v) {
+        var s = v == null ? '' : String(v);
+        if (/[",\r\n]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+        return s;
+      }).join(',');
+    }).join('\n');
+  }
+
+  /** 关联键重复时保留第一行（和原脚本一致） */
+  function buildIndex(rows, keyIndex, trimKey) {
+    var map = {};
+    var seen = Object.create(null);
+    for (var i = 0; i < rows.length; i++) {
+      var k = trimKey ? String(rows[i][keyIndex] || '').replace(/^\s+|\s+$/g, '') : String(rows[i][keyIndex] || '');
+      if (!Object.prototype.hasOwnProperty.call(seen, k)) { seen[k] = 1; map[k] = rows[i]; }
+    }
+    return map;
+  }
+
+  /**
+   * @param {Object} A {headers, rows}  @param {Object} B
+   * @param {number} ia A 关联列下标  @param {number} ib
+   * @param {string} mode anb | a.b | b.a | aub | a-b | b-a
+   * @returns {{headers: string[], rows: string[][], matched: number}}
+   */
+  function join(A, B, ia, ib, mode, trimKey) {
+    var headers = A.headers.concat(B.headers);
+    var emptyA = A.headers.map(function () { return ''; });
+    var emptyB = B.headers.map(function () { return ''; });
+    var idxA = buildIndex(A.rows, ia, trimKey);
+    var idxB = buildIndex(B.rows, ib, trimKey);
+    var keyOf = function (row, i) {
+      return trimKey ? String(row[i] || '').replace(/^\s+|\s+$/g, '') : String(row[i] || '');
+    };
+
+    var out = [], matched = 0, i, k, ra, rb;
+    switch (mode) {
+      case 'anb':
+        for (i = 0; i < A.rows.length; i++) {
+          k = keyOf(A.rows[i], ia);
+          if (Object.prototype.hasOwnProperty.call(idxB, k)) { out.push(A.rows[i].concat(idxB[k])); matched++; }
+        }
+        break;
+      case 'a.b':
+        for (i = 0; i < A.rows.length; i++) {
+          k = keyOf(A.rows[i], ia);
+          rb = idxB[k] || emptyB;
+          if (idxB[k]) matched++;
+          out.push(A.rows[i].concat(rb));
+        }
+        break;
+      case 'b.a':
+        for (i = 0; i < B.rows.length; i++) {
+          k = keyOf(B.rows[i], ib);
+          ra = idxA[k] || emptyA;
+          if (idxA[k]) matched++;
+          out.push(ra.concat(B.rows[i]));
+        }
+        break;
+      case 'aub':
+        var keys = Object.create(null);
+        for (i = 0; i < A.rows.length; i++) keys[keyOf(A.rows[i], ia)] = 1;
+        for (i = 0; i < B.rows.length; i++) keys[keyOf(B.rows[i], ib)] = 1;
+        for (k in keys) {
+          if (!Object.prototype.hasOwnProperty.call(keys, k)) continue;
+          ra = idxA[k] || emptyA;
+          rb = idxB[k] || emptyB;
+          if (idxA[k] && idxB[k]) matched++;
+          out.push(ra.concat(rb));
+        }
+        break;
+      case 'a-b':
+        for (i = 0; i < A.rows.length; i++) {
+          k = keyOf(A.rows[i], ia);
+          if (!Object.prototype.hasOwnProperty.call(idxB, k)) out.push(A.rows[i].concat(emptyB));
+        }
+        break;
+      case 'b-a':
+        for (i = 0; i < B.rows.length; i++) {
+          k = keyOf(B.rows[i], ib);
+          if (!Object.prototype.hasOwnProperty.call(idxA, k)) out.push(emptyA.concat(B.rows[i]));
+        }
+        break;
+      default:
+        throw new Error('未知模式: ' + mode);
+    }
+    return { headers: headers, rows: out, matched: matched };
+  }
+
+  window.__csvJoin = { parseCsv: parseCsv, stringifyCsv: stringifyCsv, detectDelimiter: detectDelimiter, join: join, buildIndex: buildIndex };
+
+  /* ══════════ 状态 ══════════ */
+
+  var state = { A: null, B: null, mode: 'anb', result: null, manualKey: false, keep: null, keepSig: '' };
+  var MODE_HINT = {
+    anb: '只保留两边键都能对上的行（内连接）',
+    'a.b': 'A 每行都保留，B 对不上就留空（左连接）',
+    'b.a': 'B 每行都保留，A 对不上就留空（右连接）',
+    aub: '两边所有键都保留，缺的一侧留空（全外连接）',
+    'a-b': '只保留 A 里有、B 里没有的键',
+    'b-a': '只保留 B 里有、A 里没有的键'
+  };
+
+  try {
+    var saved = Z.dbStorage && Z.dbStorage.getItem('mode');
+    if (saved && MODE_HINT[saved]) state.mode = saved;
+  } catch (e) {}
+
+  function toast(msg) {
+    var t = $('toast');
+    t.textContent = msg; t.classList.add('show');
+    clearTimeout(t._tm); t._tm = setTimeout(function () { t.classList.remove('show'); }, 1800);
+  }
+
+  function applyTheme() {
+    var dark = false;
+    try { dark = !!Z.isDarkColors(); } catch (e) { dark = window.matchMedia('(prefers-color-scheme: dark)').matches; }
+    document.documentElement.classList.toggle('dark', dark);
+  }
+  applyTheme();
+  try { Z.onThemeChange && Z.onThemeChange(applyTheme); } catch (e) {}
+  try { Z.setExpendHeight && Z.setExpendHeight(600); } catch (e) {}
+
+  /* ══════════ 文件读取 ══════════ */
+
+  function loadFile(side, file) {
+    var reader = new FileReader();
+    reader.onload = function () { applyText(side, file.name, String(reader.result || '')); };
+    reader.onerror = function () { toast('读取失败'); };
+    reader.readAsText(file, 'utf-8');
+  }
+
+  /** 从 ZTools 选中文件进来时带入（payload 是文件数组） */
+  function loadPath(side, item) {
+    var p = item && (item.path || item.name);
+    if (!p) return;
+    var text = BR.readTextFile ? BR.readTextFile(p) : '';
+    if (!text) { toast('读取不到文件内容：' + p); return; }
+    applyText(side, item.name || String(p).split(/[\\/]/).pop(), text);
+  }
+
+  // 把 FileReader 的异步结果和 loadPath 统一到一处
+  function applyText(side, name, text) {
+    var delim = detectDelimiter(text);
+    var rows = parseCsv(text, delim);
+    if (!rows.length) { toast('文件是空的'); return; }
+    var headers = rows.shift();
+    var obj = { name: name, headers: headers, rows: rows, delim: delim };
+    state[side] = obj;
+    renderFile(side, obj);
+    fillKeySelect(side, obj);
+    guessKeys();
+    maybeRun();
+  }
+
+  function renderFile(side, obj) {
+    $('name' + side).textContent = obj.name;
+    $('meta' + side).textContent = obj.rows.length + ' 行 × ' + obj.headers.length + ' 列（分隔符 ' +
+      (obj.delim === '\t' ? 'Tab' : obj.delim) + '）';
+    $('box' + side).classList.add('loaded');
+    var box = $('cols' + side);
+    box.innerHTML = '';
+    obj.headers.forEach(function (h, i) {
+      var s = document.createElement('span');
+      s.className = 'col';
+      s.title = '点击设为 ' + side + ' 的关联列';
+      s.style.cursor = 'pointer';
+      s.dataset.idx = i;
+      s.textContent = h || '(第' + (i + 1) + '列)';
+      s.onclick = function () {
+        var sel = $('key' + side);
+        if (!sel.querySelector('option[value="' + i + '"]')) fillKeySelect(side, obj);
+        sel.value = String(i);
+        state.manualKey = true;
+        highlightKey(side, i);
+        maybeRun();
+      };
+      box.appendChild(s);
+    });
+  }
+
+  function fillKeySelect(side, obj) {
+    var sel = $('key' + side);
+    var cur = sel.value;
+    sel.innerHTML = '';
+    obj.headers.forEach(function (h, i) {
+      var op = document.createElement('option');
+      op.value = String(i);
+      op.textContent = (h || '(第' + (i + 1) + '列)');
+      sel.appendChild(op);
+    });
+    if (cur !== '' && obj.headers[+cur] !== undefined) sel.value = cur;
+    sel.onchange = function () { state.manualKey = true; highlightKey(side, sel.value); maybeRun(); };
+  }
+
+  function highlightKey(side, idx) {
+    var box = $('cols' + side);
+    var chips = box.querySelectorAll('.col');
+    for (var i = 0; i < chips.length; i++) {
+      chips[i].classList.toggle('hit', String(idx) === String(chips[i].dataset.idx));
+    }
+  }
+
+  function guessKeys(force) {
+    if (!state.A || !state.B) return;
+    // 用户手动选过就不再自动覆盖，除非点“自动匹配同名列”
+    if (state.manualKey && !force) {
+      var va = $('keyA').value, vb = $('keyB').value;
+      if (va !== '' && vb !== '' &&
+          state.A.headers[+va] !== undefined && state.B.headers[+vb] !== undefined) return;
+    }
+    var sa = $('keyA'), sb = $('keyB');
+    var lowerB = {};
+    state.B.headers.forEach(function (h, i) { if (h) lowerB[String(h).toLowerCase()] = i; });
+    var found = -1, foundB = -1;
+    state.A.headers.forEach(function (h, i) {
+      if (found >= 0 || !h) return;
+      var j = lowerB[String(h).toLowerCase()];
+      if (j !== undefined) { found = i; foundB = j; }
+    });
+    if (found >= 0) {
+      sa.value = String(found); sb.value = String(foundB);
+      highlightKey('A', found); highlightKey('B', foundB);
+      toast('已自动匹配同名列：' + state.A.headers[found]);
+    }
+  }
+
+  $('pickA').onclick = function () { $('fileA').click(); };
+  $('pickB').onclick = function () { $('fileB').click(); };
+  $('fileA').onchange = function () { if (this.files[0]) loadFile('A', this.files[0]); this.value = ''; };
+  $('fileB').onchange = function () { if (this.files[0]) loadFile('B', this.files[0]); this.value = ''; };
+
+  // 拖拽：拖到哪一侧的文件框就归哪一侧
+  ['A', 'B'].forEach(function (side) {
+    var box = $('box' + side);
+    box.addEventListener('dragover', function (e) { e.preventDefault(); });
+    box.addEventListener('drop', function (e) {
+      e.preventDefault();
+      var f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+      if (f) loadFile(side, f);
+    });
+  });
+
+  /* ══════════ 模式 & 执行 ══════════ */
+
+  var modeBtns = document.querySelectorAll('[data-mode]');
+  for (var m = 0; m < modeBtns.length; m++) {
+    (function (btn) {
+      btn.onclick = function () {
+        state.mode = btn.dataset.mode;
+        try { Z.dbStorage && Z.dbStorage.setItem('mode', state.mode); } catch (e) {}
+        syncModeBtns();
+        run();
+      };
+    })(modeBtns[m]);
+  }
+  function syncModeBtns() {
+    for (var i = 0; i < modeBtns.length; i++) {
+      modeBtns[i].classList.toggle('on', modeBtns[i].dataset.mode === state.mode);
+    }
+    $('modeHint').textContent = MODE_HINT[state.mode] || '';
+  }
+
+  function maybeRun() {
+    if (state.A && state.B && $('keyA').value !== '' && $('keyB').value !== '') run();
+  }
+
+  function run() {
+    if (!state.A || !state.B) { toast('先选两个 CSV 文件'); return; }
+    var ia = parseInt($('keyA').value, 10);
+    var ib = parseInt($('keyB').value, 10);
+    if (isNaN(ia) || isNaN(ib)) { toast('先指定 A、B 的关联列'); return; }
+    var trimKey = $('trimKey').checked;
+    var t0 = Date.now();
+    var res;
+    try {
+      res = join(state.A, state.B, ia, ib, state.mode, trimKey);
+    } catch (e) {
+      $('preview').innerHTML = '<div class="err">' + e.message + '</div>';
+      return;
+    }
+    state.result = res;
+    ensureKeep();
+    var ms = Date.now() - t0;
+    var picked = keepIndexes().length;
+    $('stat').innerHTML = '结果 <b>' + res.rows.length + '</b> 行 · 命中 <b>' + res.matched +
+      '</b> · 列 <b>' + picked + '/' + res.headers.length + '</b> · 耗时 ' + ms + 'ms';
+    renderPicks();
+    renderPreview();
+  }
+
+  /* ══════════ 结果列筛选 ══════════ */
+
+  function headerSig() {
+    if (!state.result) return '';
+    return state.result.headers.join('\u0001') + '\u0002' + (state.A ? state.A.headers.length : 0) + '\u0003' + state.mode;
+  }
+
+  /** 默认：A 的列全留，B 里和 A 重名的列去掉（合并时最常见的冗余）；差集只留有效的那一侧 */
+  function defaultKeep(res) {
+    var na = state.A ? state.A.headers.length : 0;
+    if (state.mode === 'a-b') return res.headers.map(function (h, i) { return i < na; });
+    if (state.mode === 'b-a') return res.headers.map(function (h, i) { return i >= na; });
+    var seen = Object.create(null);
+    for (var i = 0; i < na; i++) seen[String(res.headers[i] || '').toLowerCase()] = 1;
+    return res.headers.map(function (h, i) {
+      if (i < na) return true;
+      var name = String(h || '').toLowerCase();
+      if (name === '') return true;
+      return !seen[name];
+    });
+  }
+
+  function ensureKeep() {
+    var sig = headerSig();
+    if (state.keepSig !== sig || !state.keep || state.keep.length !== state.result.headers.length) {
+      state.keep = defaultKeep(state.result);
+      state.keepSig = sig;
+    }
+  }
+
+  function keepIndexes() {
+    var out = [];
+    (state.keep || []).forEach(function (v, i) { if (v) out.push(i); });
+    return out;
+  }
+
+  /** 按勾选投影出一份结果（预览 / 导出 / 复制都用它） */
+  function project(res) {
+    var idx = keepIndexes();
+    return {
+      headers: idx.map(function (i) { return res.headers[i]; }),
+      rows: res.rows.map(function (r) {
+        return idx.map(function (i) { return r[i] == null ? '' : r[i]; });
+      }),
+      srcIdx: idx
+    };
+  }
+
+  function renderPicks() {
+    var bar = $('colbar'), box = $('picks');
+    if (!state.result) { bar.style.display = 'none'; return; }
+    var na = state.A ? state.A.headers.length : 0;
+    bar.style.display = 'flex';
+    box.innerHTML = '';
+    state.result.headers.forEach(function (h, i) {
+      var lab = document.createElement('label');
+      lab.className = 'pick ' + (i < na ? 'a' : 'b') + (state.keep[i] ? ' on' : '') + (h ? '' : ' empty-hdr');
+      var cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = !!state.keep[i];
+      cb.dataset.idx = i;
+      cb.onchange = function () {
+        state.keep[i] = cb.checked;
+        lab.classList.toggle('on', cb.checked);
+        refreshPicked();
+      };
+      lab.appendChild(cb);
+      lab.appendChild(document.createTextNode(h || '(第' + (i + 1) + '列)'));
+      box.appendChild(lab);
+    });
+    refreshPicked();
+  }
+
+  function refreshPicked() {
+    var n = keepIndexes().length, total = state.result ? state.result.headers.length : 0;
+    $('pickStat').textContent = '已选 ' + n + '/' + total;
+    var rows = state.result ? state.result.rows.length : 0;
+    var hit = state.result && state.result.matched != null ? ' · 命中 <b>' + state.result.matched + '</b>' : '';
+    $('stat').innerHTML = '结果 <b>' + rows + '</b> 行' + hit + ' · 列 <b>' + n + '/' + total + '</b>';
+    renderPreview();
+  }
+
+  function renderPreview() {
+    if (!state.result) return;
+    var res = project(state.result);
+    var na = state.A ? state.A.headers.length : 0;
+    if (!res.headers.length) {
+      $('preview').innerHTML = '<div class="hint">一列都没选，勾上面任意一列再导出</div>';
+      return;
+    }
+    var MAX = 100;
+    var html = '<table><thead><tr>';
+    res.headers.forEach(function (h, i) {
+      var cls = res.srcIdx[i] < na ? 'a' : 'b';
+      html += '<th class="' + cls + '">' + escapeHtml(h || '') + '</th>';
+    });
+    html += '</tr></thead><tbody>';
+    var n = Math.min(res.rows.length, MAX);
+    for (var r = 0; r < n; r++) {
+      html += '<tr>';
+      for (var c = 0; c < res.headers.length; c++) {
+        var v = res.rows[r][c];
+        html += v === '' || v == null ? '<td class="empty">∅</td>' : '<td>' + escapeHtml(String(v)) + '</td>';
+      }
+      html += '</tr>';
+    }
+    html += '</tbody></table>';
+    if (res.rows.length > MAX) html += '<div class="hint">仅预览前 ' + MAX + ' 行（共 ' + res.rows.length + ' 行），导出可获得全部</div>';
+    $('preview').innerHTML = html;
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"]/g, function (c) {
+      return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c];
+    });
+  }
+
+  /* ══════════ 导出 / 复制 ══════════ */
+
+  $('btnRun').onclick = run;
+
+  function stamp() {
+    var d = new Date(), p = function (n) { return (n < 10 ? '0' : '') + n; };
+    return d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + '-' + p(d.getHours()) + p(d.getMinutes());
+  }
+
+  /** 按勾选的列拼出当前要输出的 CSV */
+  function resultCsv() {
+    if (!state.result) return '';
+    var p = project(state.result);
+    if (!p.headers.length) return '';
+    return stringifyCsv([p.headers].concat(p.rows));
+  }
+
+  /**
+   * 复制：官方 copyText 最可靠（主进程同步写，返回 true 才算成功），逐条往下退
+   * @returns {string} 命中的方式；空串表示全失败
+   */
+  function copyToClipboard(text) {
+    try { if (Z.copyText && Z.copyText(text) === true) return 'copyText'; } catch (e) {}
+    try { if (BR.writeClipboard && BR.writeClipboard(text) === true) return 'bridge'; } catch (e) {}
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text);
+        return 'navigator';
+      }
+    } catch (e) {}
+    try {
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.cssText = 'position:fixed;top:-1000px;left:0;opacity:0';
+      document.body.appendChild(ta);
+      ta.focus(); ta.select();
+      var ok = document.execCommand('copy');
+      document.body.removeChild(ta);
+      if (ok) return 'exec';
+    } catch (e) {}
+    return '';
+  }
+
+  /**
+   * 导出：先弹系统「另存为」（用户能选位置），再退到下载目录，最后退到浏览器下载
+   * @returns {string} 取消返回 'canceled'，成功返回文件路径或 'download'
+   */
+  function saveCsv(text, name) {
+    if (Z.showSaveDialog && BR.writeTextFile) {
+      var p;
+      try {
+        p = Z.showSaveDialog({
+          title: '保存 CSV',
+          defaultPath: name,
+          filters: [{ name: 'CSV 文件', extensions: ['csv'] }]
+        });
+      } catch (e) { p = null; }
+      if (p === undefined || p === null) return 'canceled';
+      if (p && BR.writeTextFile(p, text)) return p;
+    }
+    if (BR.saveFile) {
+      var f = '';
+      try { f = BR.saveFile(name, text); } catch (e) { f = ''; }
+      if (f) return f;
+    }
+    // 浏览器 / 无法写盘时：Blob 下载（Electron 里同样会弹系统保存框）
+    try {
+      var blob = new Blob(['\ufeff' + text], { type: 'text/csv;charset=utf-8' });
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(function () {
+        if (a.parentNode) a.parentNode.removeChild(a);
+        URL.revokeObjectURL(a.href);
+      }, 2000);
+      return 'download';
+    } catch (e) {}
+    return '';
+  }
+
+  $('btnSave').onclick = function () {
+    if (!state.result) { toast('还没有结果'); return; }
+    var text = resultCsv();
+    if (!text) { toast('先在「结果列」里勾选要导出的列'); return; }
+    var name = 'csv-join-' + String(state.mode).replace('.', '-') + '-' + stamp() + '.csv';
+    var r = saveCsv(text, name);
+    if (r === 'canceled') { toast('已取消保存'); return; }
+    if (r === 'download') { toast('已生成 ' + name + '，选择保存位置即可'); return; }
+    if (r) {
+      try { if (BR.reveal) BR.reveal(r); } catch (e) {}
+      toast('已导出：' + r);
+      return;
+    }
+    toast('导出失败，改用「复制结果」再粘到文件里');
+  };
+
+  $('btnCopy').onclick = function () {
+    if (!state.result) { toast('还没有结果'); return; }
+    var text = resultCsv();
+    if (!text) { toast('先在「结果列」里勾选要导出的列'); return; }
+    var n = project(state.result).rows.length;
+    var how = copyToClipboard(text);
+    if (how) { toast('已复制 ' + n + ' 行（' + how + '）'); return; }
+    // 实在不行：把 CSV 塞进可见文本框并全选，让用户自己 ⌘C
+    var ta = $('fallbackText');
+    if (!ta) {
+      ta = document.createElement('textarea');
+      ta.id = 'fallbackText';
+      ta.style.cssText = 'position:fixed;left:8px;right:8px;bottom:8px;height:90px;z-index:99;font-family:var(--mono);font-size:11px';
+      document.body.appendChild(ta);
+    }
+    ta.value = text;
+    ta.style.display = 'block';
+    ta.focus(); ta.select();
+    toast('自动复制被拦截，已全选文本，按 ⌘C 复制');
+  };
+  $('pickAll').onclick = function () {
+    if (!state.result) return;
+    state.keep = state.keep.map(function () { return true; });
+    renderPicks();
+  };
+  $('pickNone').onclick = function () {
+    if (!state.result) return;
+    state.keep = state.keep.map(function () { return false; });
+    renderPicks();
+  };
+  $('pickDefault').onclick = function () {
+    if (!state.result) return;
+    state.keep = defaultKeep(state.result);
+    renderPicks();
+  };
+  $('guess').onclick = function () {
+    if (!state.A || !state.B) { toast('先选两个文件'); return; }
+    guessKeys(true); maybeRun();
+  };
+  $('swapFile').onclick = function () {
+    var t = state.A; state.A = state.B; state.B = t;
+    state.manualKey = false;
+    if (state.A) { renderFile('A', state.A); fillKeySelect('A', state.A); }
+    else { resetSide('A'); }
+    if (state.B) { renderFile('B', state.B); fillKeySelect('B', state.B); }
+    else { resetSide('B'); }
+    guessKeys(); maybeRun();
+  };
+  $('clearAll').onclick = function () {
+    state.A = state.B = state.result = null;
+    state.manualKey = false;
+    state.keep = null; state.keepSig = '';
+    resetSide('A'); resetSide('B');
+    $('colbar').style.display = 'none';
+    $('picks').innerHTML = '';
+    $('pickStat').textContent = '';
+    $('preview').innerHTML = '<div class="hint">已清空，重新选择文件即可</div>';
+    $('stat').textContent = '等待选择文件';
+  };
+  function resetSide(side) {
+    $('name' + side).textContent = '未选择';
+    $('meta' + side).textContent = '';
+    $('cols' + side).innerHTML = '';
+    $('key' + side).innerHTML = '<option value="">' + side + ' 的列…</option>';
+    $('box' + side).classList.remove('loaded');
+  }
+
+  syncModeBtns();
+
+  /* 从 ZTools 选中文件进入时，最多带入两个（第一个给 A，第二个给 B） */
+  try {
+    Z.onPluginEnter && Z.onPluginEnter(function (action) {
+      var files = action && action.payload;
+      if (!files || !files.length) return;
+      var picked = [];
+      for (var i = 0; i < files.length && picked.length < 2; i++) {
+        if (/\.(csv|tsv|txt)$/i.test(files[i].path || files[i].name || '')) picked.push(files[i]);
+      }
+      if (picked.length === 1 && /\.(csv|tsv|txt)$/i.test(files[0].path || files[0].name || '')) picked = [files[0]];
+      if (!picked.length) return;
+      state.manualKey = false;
+      loadPath('A', picked[0]);
+      if (picked[1]) loadPath('B', picked[1]);
+    });
+  } catch (e) {}
+})();
+</script>
+</body>
+</html>

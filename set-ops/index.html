@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>文本集合运算</title>
+<style>
+  :root {
+    --bg: #ffffff; --bg-soft: #f6f7f9; --bg-hover: #eef0f4;
+    --fg: #1f2328; --fg-dim: #6b7280; --line: #e5e7eb;
+    --accent: #2e7cf6; --accent-soft: #e8f1ff;
+    --a: #2e7cf6; --b: #8b5cf6;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  }
+  html.dark {
+    --bg: #1a1b1e; --bg-soft: #22242a; --bg-hover: #2c2f36;
+    --fg: #e5e7eb; --fg-dim: #9ca3af; --line: #33363d;
+    --accent: #6ea8fe; --accent-soft: #1e2a3d;
+    --a: #6ea8fe; --b: #c4b5fd;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg); color: var(--fg);
+    font: 12px/1.5 -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  button, textarea, label { font-family: inherit; font-size: 12px; }
+
+  .opts {
+    flex: 0 0 auto; display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+    padding: 6px 10px; border-bottom: 1px solid var(--line); background: var(--bg-soft);
+  }
+  .opts label { display: flex; align-items: center; gap: 3px; color: var(--fg-dim); cursor: pointer; white-space: nowrap; }
+  .opts input[type=checkbox] { margin: 0; }
+
+  .panes { flex: 1 1 auto; display: flex; gap: 8px; padding: 8px 10px; min-height: 0; }
+  .pane { flex: 1 1 0; display: flex; flex-direction: column; min-width: 0; }
+  .pane > header {
+    display: flex; align-items: center; gap: 6px; margin-bottom: 4px; font-weight: 600;
+  }
+  .pane.a > header .dot { color: var(--a); }
+  .pane.b > header .dot { color: var(--b); }
+  .pane > header .cnt { color: var(--fg-dim); font-weight: 400; }
+  .pane textarea {
+    flex: 1 1 auto; width: 100%; min-height: 0; resize: none; padding: 6px 8px;
+    border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg);
+    font-family: var(--mono); font-size: 12px; outline: none; line-height: 1.6;
+  }
+  .pane textarea:focus { border-color: var(--accent); }
+
+  .ops {
+    flex: 0 0 auto; display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+    padding: 0 10px 8px;
+  }
+  .btn {
+    border: 1px solid var(--line); background: var(--bg); color: var(--fg);
+    border-radius: 6px; padding: 5px 10px; cursor: pointer;
+  }
+  .btn:hover { background: var(--bg-hover); }
+  .btn.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .spacer { flex: 1 1 auto; }
+
+  .out { flex: 0 0 auto; display: flex; flex-direction: column; padding: 0 10px 8px; }
+  .out > header { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+  .out > header .title { font-weight: 600; }
+  .out > header .cnt { color: var(--fg-dim); }
+  .out textarea {
+    height: 132px; width: 100%; resize: none; padding: 6px 8px;
+    border: 1px solid var(--line); border-radius: 6px; background: var(--bg-soft); color: var(--fg);
+    font-family: var(--mono); font-size: 12px; outline: none; line-height: 1.6;
+  }
+  .toast {
+    position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%);
+    background: rgba(0,0,0,.82); color: #fff; padding: 5px 12px; border-radius: 6px;
+    opacity: 0; pointer-events: none; transition: opacity .18s; z-index: 9;
+  }
+  .toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+
+<div class="opts">
+  <label><input type="checkbox" id="optTrim" checked /> 去首尾空格</label>
+  <label><input type="checkbox" id="optEmpty" checked /> 忽略空行</label>
+  <label><input type="checkbox" id="optDedupe" checked /> 去重</label>
+  <label><input type="checkbox" id="optCase" /> 忽略大小写</label>
+  <label><input type="checkbox" id="optSort" /> 结果排序</label>
+  <span class="spacer"></span>
+  <button class="btn" id="btnSwap">交换 A/B</button>
+  <button class="btn" id="btnClear">清空</button>
+</div>
+
+<div class="panes">
+  <div class="pane a">
+    <header>
+      <span class="dot">●</span><span>A</span>
+      <span class="cnt" id="cntA">0 行</span>
+      <span class="spacer"></span>
+      <button class="btn" id="btnPasteA" style="padding:2px 7px">粘贴</button>
+    </header>
+    <textarea id="taA" spellcheck="false" placeholder="A：每行一条，例如&#10;aaa&#10;bbb&#10;ccc"></textarea>
+  </div>
+  <div class="pane b">
+    <header>
+      <span class="dot">●</span><span>B</span>
+      <span class="cnt" id="cntB">0 行</span>
+      <span class="spacer"></span>
+      <button class="btn" id="btnPasteB" style="padding:2px 7px">粘贴</button>
+    </header>
+    <textarea id="taB" spellcheck="false" placeholder="B：每行一条，例如&#10;bbb&#10;ccc&#10;ddd"></textarea>
+  </div>
+</div>
+
+<div class="ops">
+  <button class="btn" data-op="inter">交集 A∩B</button>
+  <button class="btn" data-op="union">并集 A∪B</button>
+  <button class="btn" data-op="symdiff" title="只在其中一边出现过的行">差集 A△B</button>
+  <button class="btn" data-op="anotb">A 排除 B</button>
+  <button class="btn" data-op="bnota">B 排除 A</button>
+  <span class="spacer"></span>
+  <span id="opHint" style="color:var(--fg-dim)"></span>
+</div>
+
+<div class="out">
+  <header>
+    <span class="title">结果</span>
+    <span class="cnt" id="cntR">0 行</span>
+    <span class="spacer"></span>
+    <button class="btn" id="btnCopy">复制结果</button>
+    <button class="btn" id="btnSave">另存为</button>
+  </header>
+  <textarea id="taR" spellcheck="false" readonly placeholder="点上面的按钮选一种运算"></textarea>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function () {
+  'use strict';
+
+  var Z = window.ztools || {};
+  var BR = window.__bridge || {};
+  var $ = function (id) { return document.getElementById(id); };
+
+  /* ── 选项（持久化） ── */
+  var opts = { trim: true, empty: true, dedupe: true, ignoreCase: false, sort: false, op: 'inter' };
+  try {
+    var saved = Z.dbStorage && Z.dbStorage.getItem('opts');
+    if (saved) { var p = JSON.parse(saved); for (var k in p) if (k in opts) opts[k] = p[k]; }
+  } catch (e) {}
+  function saveOpts() { try { Z.dbStorage && Z.dbStorage.setItem('opts', JSON.stringify(opts)); } catch (e) {} }
+
+  var OPT_EL = { trim: 'optTrim', empty: 'optEmpty', dedupe: 'optDedupe', ignoreCase: 'optCase', sort: 'optSort' };
+  for (var ok in OPT_EL) {
+    (function (key, id) {
+      $(id).checked = !!opts[key];
+      $(id).onchange = function () { opts[key] = this.checked; saveOpts(); compute(); };
+    })(ok, OPT_EL[ok]);
+  }
+
+  /* ── 主题 ── */
+  function applyTheme() {
+    var dark = false;
+    try { dark = !!Z.isDarkColors(); } catch (e) { dark = window.matchMedia('(prefers-color-scheme: dark)').matches; }
+    document.documentElement.classList.toggle('dark', dark);
+  }
+  applyTheme();
+  try { Z.onThemeChange && Z.onThemeChange(applyTheme); } catch (e) {}
+  try { Z.setExpendHeight && Z.setExpendHeight(560); } catch (e) {}
+
+  function toast(msg) {
+    var t = $('toast');
+    t.textContent = msg; t.classList.add('show');
+    clearTimeout(t._tm); t._tm = setTimeout(function () { t.classList.remove('show'); }, 1600);
+  }
+
+  /* ── 核心：把文本切成 [{k, v}] ── */
+  function parse(text) {
+    var arr = String(text == null ? '' : text).split(/\r\n|\n|\r/);
+    var out = [], seen = Object.create(null);
+    for (var i = 0; i < arr.length; i++) {
+      var v = opts.trim ? arr[i].replace(/^\s+|\s+$/g, '') : arr[i];
+      if (opts.empty && v === '') continue;
+      var k = opts.ignoreCase ? v.toLowerCase() : v;
+      if (opts.dedupe) { if (seen[k]) continue; seen[k] = 1; }
+      out.push({ k: k, v: v });
+    }
+    return out;
+  }
+
+  function keySet(list) {
+    var s = Object.create(null);
+    for (var i = 0; i < list.length; i++) s[list[i].k] = 1;
+    return s;
+  }
+
+  function compute() {
+    var A = parse($('taA').value);
+    var B = parse($('taB').value);
+    $('cntA').textContent = A.length + ' 行';
+    $('cntB').textContent = B.length + ' 行';
+
+    var bs = keySet(B), as = keySet(A);
+    var res = [], i;
+
+    switch (opts.op) {
+      case 'inter':
+        for (i = 0; i < A.length; i++) if (bs[A[i].k]) res.push(A[i]);
+        break;
+      case 'union':
+        res = A.slice();
+        for (i = 0; i < B.length; i++) if (!as[B[i].k]) res.push(B[i]);
+        break;
+      case 'symdiff':
+        for (i = 0; i < A.length; i++) if (!bs[A[i].k]) res.push(A[i]);
+        for (i = 0; i < B.length; i++) if (!as[B[i].k]) res.push(B[i]);
+        break;
+      case 'bnota':
+        for (i = 0; i < B.length; i++) if (!as[B[i].k]) res.push(B[i]);
+        break;
+      case 'anotb':
+        for (i = 0; i < A.length; i++) if (!bs[A[i].k]) res.push(A[i]);
+        break;
+      default:
+        res = [];
+    }
+
+    if (opts.sort) res.sort(function (x, y) { return x.v < y.v ? -1 : x.v > y.v ? 1 : 0; });
+
+    var text = res.map(function (x) { return x.v; }).join('\n');
+    $('taR').value = text;
+    $('cntR').textContent = res.length + ' 行';
+    return text;
+  }
+
+  /* ── 按钮 ── */
+  var HINTS = {
+    inter: '两边都有的行',
+    union: '两边的行合并去重',
+    symdiff: '只在一边出现过的行',
+    bnota: '在 B 里、但 A 里没有',
+    anotb: '在 A 里、但 B 里没有'
+  };
+  var opBtns = document.querySelectorAll('[data-op]');
+  for (var i = 0; i < opBtns.length; i++) {
+    (function (btn) {
+      btn.onclick = function () {
+        opts.op = btn.dataset.op;
+        saveOpts();
+        syncOpButtons();
+        compute();
+      };
+    })(opBtns[i]);
+  }
+  function syncOpButtons() {
+    for (var j = 0; j < opBtns.length; j++) {
+      opBtns[j].classList.toggle('on', opBtns[j].dataset.op === opts.op);
+    }
+    $('opHint').textContent = HINTS[opts.op] || '';
+  }
+
+  $('taA').addEventListener('input', compute);
+  $('taB').addEventListener('input', compute);
+
+  $('btnSwap').onclick = function () {
+    var t = $('taA').value; $('taA').value = $('taB').value; $('taB').value = t;
+    compute();
+  };
+  $('btnClear').onclick = function () {
+    $('taA').value = ''; $('taB').value = ''; $('taR').value = '';
+    $('cntA').textContent = '0 行'; $('cntB').textContent = '0 行'; $('cntR').textContent = '0 行';
+  };
+  $('btnPasteA').onclick = function () { fill('taA'); };
+  $('btnPasteB').onclick = function () { fill('taB'); };
+  function fill(id) {
+    var t = BR.readClipboard ? BR.readClipboard() : '';
+    if (!t) { toast('剪贴板里没有文本'); return; }
+    $(id).value = t; compute(); toast('已粘贴');
+  }
+
+  /* ── 复制：多路径兜底 + 写后校验，全失败就全选让用户 ⌘C ── */
+  function canVerify() {
+    // 能读回非空内容才说明剪贴板可读，此时才做「写后校验」
+    try { var v = BR.readClipboard(); return typeof v === 'string' && v.length > 0; } catch (e) { return false; }
+  }
+  function verify(text) {
+    if (!canVerify()) return true; // 读不回来就只信方法自己的返回值
+    try { return BR.readClipboard() === text; } catch (e) { return true; }
+  }
+  function copyViaExecCommand(text) {
+    try {
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.cssText = 'position:fixed;top:-1000px;left:0;opacity:0';
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      var ok = document.execCommand('copy');
+      document.body.removeChild(ta);
+      return !!ok;
+    } catch (e) { return false; }
+  }
+  function doCopy(text) {
+    var ways = [
+      { name: 'exec', run: function () { return copyViaExecCommand(text); } },
+      { name: 'ztools', run: function () { if (!Z.copyText) return false; Z.copyText(text); return true; } },
+      { name: 'electron', run: function () { return !!(BR.writeClipboard && BR.writeClipboard(text)); } },
+      { name: 'navigator', run: function () {
+        if (!navigator.clipboard || !navigator.clipboard.writeText) return false;
+        try { navigator.clipboard.writeText(text); return true; } catch (e) { return false; }
+      } }
+    ];
+    for (var i = 0; i < ways.length; i++) {
+      var ok = false;
+      try { ok = ways[i].run(); } catch (e) { ok = false; }
+      if (ok && verify(text)) return ways[i].name;
+    }
+    // 全都写不进去：把结果全选，用户自己 ⌘C
+    var r = $('taR');
+    try { r.focus(); r.select(); } catch (e) {}
+    return 'manual';
+  }
+  var WAY_LABEL = { exec: '浏览器复制', ztools: 'ZTools', electron: '系统剪贴板', navigator: '剪贴板 API' };
+  $('btnCopy').onclick = function () {
+    var text = $('taR').value;
+    if (!text) { toast('结果还是空的'); return; }
+    var way = doCopy(text);
+    var n = text.split('\n').length;
+    if (way === 'manual') toast('自动复制没成功，已全选结果，按 ⌘C 复制');
+    else toast('已复制 ' + n + ' 行（' + (WAY_LABEL[way] || way) + '）');
+  };
+  $('btnSave').onclick = function () {
+    var text = $('taR').value;
+    if (!text) { toast('结果还是空的'); return; }
+    var f = BR.saveFile ? BR.saveFile('set-' + opts.op + '-' + Date.now() + '.txt', text) : '';
+    toast(f ? '已保存：' + f : '保存失败');
+  };
+
+  /* ── 进入插件 ── */
+  syncOpButtons();
+
+  if (Z.onPluginEnter) {
+    Z.onPluginEnter(function (action) {
+      var payload = action && action.payload;
+      var text = typeof payload === 'string' ? payload : '';
+      if (text) {
+        // 带文本进来：放 A 栏，同时把剪贴板里的（如果不同）放 B 栏，方便直接对比
+        $('taA').value = text;
+        var clip = BR.readClipboard ? BR.readClipboard() : '';
+        if (clip && clip !== text) $('taB').value = clip;
+        compute();
+      }
+    });
+  }
+})();
+</script>
+</body>
+</html>

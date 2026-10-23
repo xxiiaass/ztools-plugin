@@ -1,0 +1,49 @@
+{
+  "name": "json-nested",
+  "title": "JSON 嵌套解析",
+  "description": "解析多层嵌套、被反复转义的 JSON 字符串：逐层展开、路径定位、按需复制，并可转发给其它 JSON 工具",
+  "version": "0.1.1",
+  "author": "kevinxia",
+  "main": "index.html",
+  "logo": "logo.png",
+  "preload": "preload.js",
+  "features": [
+    {
+      "code": "parse",
+      "explain": "解析嵌套 / 转义的 JSON",
+      "cmds": [
+        "json",
+        "jsonn",
+        "jsonx",
+        "嵌套json",
+        "json解析",
+        "解析json"
+      ]
+    },
+    {
+      "code": "parse-over",
+      "explain": "解析当前输入的 JSON 文本",
+      "cmds": [
+        {
+          "type": "over",
+          "label": "解析嵌套 JSON",
+          "exclude": "/^(json|jsonn|jsonx)$/i",
+          "minLength": 2,
+          "maxLength": 200000
+        }
+      ]
+    },
+    {
+      "code": "parse-regex",
+      "explain": "解析粘贴的 JSON 文本",
+      "cmds": [
+        {
+          "type": "regex",
+          "label": "解析嵌套 JSON",
+          "match": "/^[\\{\\[][\\s\\S]*[\\}\\]]\\s*$/",
+          "minLength": 2
+        }
+      ]
+    }
+  ]
+}
