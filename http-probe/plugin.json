@@ -1,0 +1,37 @@
+{
+  "name": "http-probe",
+  "title": "HTTP 循环探测",
+  "description": "按次数和间隔循环请求一个 URL，每次自动换有序 UUID / 序号 / 时间戳，实时看状态码、耗时、真实 IP 和指定响应头",
+  "version": "0.1.0",
+  "author": "kevinxia",
+  "main": "index.html",
+  "preload": "preload.js",
+  "logo": "logo.png",
+  "features": [
+    {
+      "code": "main",
+      "explain": "循环发请求，看状态码和响应头",
+      "cmds": [
+        "probe",
+        "http探测",
+        "循环请求",
+        "循环探测",
+        "压测",
+        "http"
+      ]
+    },
+    {
+      "code": "open-url",
+      "explain": "用 HTTP 循环探测打开这个 URL",
+      "cmds": [
+        {
+          "type": "regex",
+          "label": "HTTP 循环探测",
+          "match": "/^https?:\\/\\/\\S+$/",
+          "minLength": 8,
+          "maxLength": 2000
+        }
+      ]
+    }
+  ]
+}

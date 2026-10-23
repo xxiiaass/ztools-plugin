@@ -1,0 +1,824 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>HTTP 循环探测</title>
+<style>
+  :root {
+    --bg: #fff; --bg-soft: #f6f7f9; --bg-hover: #eef0f4;
+    --fg: #1f2328; --fg-dim: #6b7280; --line: #e5e7eb;
+    --accent: #2e7cf6; --accent-soft: #e8f1ff;
+    --ok: #16a34a; --warn: #d97706; --bad: #dc2626;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  }
+  html.dark {
+    --bg: #1a1b1e; --bg-soft: #22242a; --bg-hover: #2c2f36;
+    --fg: #e5e7eb; --fg-dim: #9ca3af; --line: #33363d;
+    --accent: #6ea8fe; --accent-soft: #1e2a3d;
+    --ok: #4ade80; --warn: #fbbf24; --bad: #f87171;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg); color: var(--fg);
+    font: 12px/1.5 -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  input, select, textarea, button { font-family: inherit; font-size: 12px; }
+  input[type=text], input[type=number], select, textarea {
+    background: var(--bg); color: var(--fg); border: 1px solid var(--line);
+    border-radius: 6px; padding: 3px 6px; outline: none;
+  }
+  input:focus, select:focus, textarea:focus { border-color: var(--accent); }
+  .btn {
+    border: 1px solid var(--line); background: var(--bg); color: var(--fg);
+    border-radius: 6px; padding: 4px 10px; cursor: pointer; white-space: nowrap;
+  }
+  .btn:hover { background: var(--bg-hover); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn.primary:hover { filter: brightness(1.05); }
+  .btn:disabled { opacity: .45; cursor: default; }
+  .spacer { flex: 1 1 auto; }
+
+  .bar { flex: 0 0 auto; display: flex; gap: 6px; align-items: center; padding: 8px 10px 4px; }
+  .bar select { width: 84px; }
+  .bar input.url { flex: 1 1 auto; min-width: 0; font-family: var(--mono); }
+
+  /* ── 填写区：填写态撑满，结果态折叠成一行 ── */
+  .editor { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; }
+  body.view-result .editor { flex: 0 0 auto; }
+
+  .collapse {
+    display: none; align-items: center; gap: 8px; padding: 4px 10px 5px;
+    color: var(--fg-dim); cursor: pointer; border-bottom: 1px solid var(--line);
+  }
+  .collapse:hover { background: var(--bg-hover); }
+  body.view-result .collapse { display: flex; }
+  .collapse .sum {
+    flex: 1 1 auto; min-width: 0; font-family: var(--mono);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg);
+  }
+  .collapse .tip { color: var(--accent); white-space: nowrap; }
+
+  .panes { flex: 1 1 auto; display: flex; gap: 8px; padding: 2px 10px 4px; min-height: 0; }
+  .pane { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 2px; min-height: 0; }
+  .pane > span { color: var(--fg-dim); }
+  .pane textarea {
+    font-family: var(--mono); font-size: 11px; line-height: 1.45;
+    flex: 1 1 auto; min-height: 68px; resize: none;
+  }
+
+  .opts { flex: 0 0 auto; display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center;
+          padding: 2px 10px 4px; color: var(--fg-dim); }
+  .opts input[type=number] { width: 66px; }
+  .opts input.wide { width: 190px; font-family: var(--mono); }
+  .opts label { display: inline-flex; align-items: center; gap: 3px; }
+
+  .tokens { flex: 0 0 auto; padding: 0 10px 6px; color: var(--fg-dim); }
+  .tokens code {
+    font-family: var(--mono); background: var(--bg-soft); border: 1px solid var(--line);
+    border-radius: 4px; padding: 0 4px; color: var(--fg); cursor: pointer;
+  }
+  .tokens code:hover { background: var(--accent-soft); border-color: var(--accent); }
+
+  .stats { flex: 0 0 auto; display: flex; gap: 14px; align-items: center;
+           padding: 4px 10px 5px; border-top: 1px solid var(--line); color: var(--fg-dim); }
+  .stats b { color: var(--fg); font-variant-numeric: tabular-nums; }
+  .stats .bad b { color: var(--bad); }
+  .stats .ok b { color: var(--ok); }
+  .prog { flex: 0 0 120px; height: 4px; background: var(--bg-soft); border-radius: 3px; overflow: hidden; }
+  .prog > i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+
+  .logwrap { flex: 1 1 auto; overflow: auto; min-height: 0; padding: 0 10px 8px; }
+  /* 填写态只留一条矮的结果预览，把高度让给上面的输入框 */
+  body.view-edit .logwrap { flex: 0 0 auto; max-height: 170px; }
+  table { border-collapse: collapse; width: 100%; table-layout: fixed;
+          font-family: var(--mono); font-size: 11px; }
+  thead th {
+    position: sticky; top: 0; z-index: 2; background: var(--bg-soft);
+    text-align: left; font-weight: 600; color: var(--fg-dim);
+    padding: 3px 6px; border-bottom: 1px solid var(--line); white-space: nowrap;
+  }
+  tbody td { padding: 2px 6px; border-bottom: 1px solid var(--line); vertical-align: top;
+             white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  tbody tr:hover { background: var(--bg-hover); }
+  tbody tr.clickable { cursor: pointer; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  td.body { color: var(--fg-dim); }
+  .s2 { color: var(--ok); font-weight: 600; }
+  .s3 { color: var(--warn); font-weight: 600; }
+  .s4, .s5 { color: var(--bad); font-weight: 600; }
+  .err { color: var(--bad); }
+  tr.detail > td { background: var(--bg-soft); padding: 6px 8px; }
+  tr.detail pre {
+    margin: 0; font-family: var(--mono); font-size: 11px;
+    white-space: pre-wrap; word-break: break-all; max-height: 220px; overflow: auto;
+  }
+  .hint { padding: 22px 8px; color: var(--fg-dim); text-align: center; line-height: 2; }
+  .toast {
+    position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%);
+    background: rgba(0,0,0,.82); color: #fff; padding: 5px 12px; border-radius: 6px;
+    opacity: 0; pointer-events: none; transition: opacity .18s; z-index: 9;
+  }
+  .toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+
+<div class="bar">
+  <select id="method" title="请求方法">
+    <option>GET</option><option>POST</option><option>PUT</option>
+    <option>DELETE</option><option>HEAD</option><option>PATCH</option><option>OPTIONS</option>
+  </select>
+  <input type="text" id="url" class="url" spellcheck="false"
+         placeholder="https://example.com/api?seq=${i}&trace=${uuid}" />
+  <button class="btn" id="btnOnce">单发</button>
+  <button class="btn primary" id="btnStart">开始</button>
+  <button class="btn" id="btnPause" disabled>暂停</button>
+  <button class="btn" id="btnStop" disabled>停止</button>
+  <button class="btn" id="btnClear">清空</button>
+  <button class="btn" id="btnView" title="只影响显示，不影响正在跑的循环">收起配置</button>
+</div>
+
+<div class="editor" id="editor">
+  <div class="collapse" id="collapse" title="点击展开配置">
+    <span id="sum" class="sum"></span>
+    <span class="tip">展开配置 ▾</span>
+  </div>
+
+<div class="panes" id="panes">
+  <label class="pane">
+    <span>请求头（每行 Key: Value）</span>
+    <textarea id="headers" spellcheck="false" placeholder="Content-Type: application/json
+X-Trace: ${uuid}"></textarea>
+  </label>
+  <label class="pane">
+    <span>请求体（GET/HEAD 会忽略）</span>
+    <textarea id="body" spellcheck="false" placeholder='{"seq":${i},"id":"${uuid}"}'></textarea>
+  </label>
+</div>
+
+<div class="opts" id="opts">
+  <label>次数 <input type="number" id="count" value="10" min="0" /> <span title="0 表示不限次数">次</span></label>
+  <label>间隔 <input type="number" id="interval" value="1000" min="0" /> ms</label>
+  <label>超时 <input type="number" id="timeout" value="10000" min="100" /> ms</label>
+  <label>起始序号 <input type="number" id="start" value="1" min="0" /></label>
+  <label><input type="checkbox" id="follow" checked /> 跟随重定向</label>
+  <label><input type="checkbox" id="insecure" /> 忽略证书错误</label>
+  <label>观察响应头 <input type="text" id="watch" class="wide" placeholder="content-type,server,x-request-id" /></label>
+</div>
+
+<div class="tokens" id="tokens">
+  占位符：<code data-tip="${i}">${i} 序号</code>
+  <code data-tip="${uuid}">${uuid} 有序 UUID</code>
+  <code data-tip="${ts}">${ts} 毫秒时间戳</code>
+  <code data-tip="${rand}">${rand} 随机串</code>
+  <span id="uuidHint" style="margin-left:6px"></span>
+</div>
+</div>
+
+<div class="stats">
+  <span>已发 <b id="stSent">0</b></span>
+  <span class="ok">成功 <b id="stOk">0</b></span>
+  <span class="bad">请求失败 <b id="stFail">0</b></span>
+  <span class="bad">状态≥400 <b id="stBad">0</b></span>
+  <span>平均 <b id="stAvg">-</b></span>
+  <span>最快 <b id="stMin">-</b></span>
+  <span>最慢 <b id="stMax">-</b></span>
+  <span class="prog"><i id="progBar"></i></span>
+  <span class="spacer"></span>
+  <span id="loading" style="color:var(--fg-dim)"></span>
+  <button class="btn" id="btnCopyCsv" style="padding:2px 8px">复制 CSV</button>
+  <button class="btn" id="btnExport" style="padding:2px 8px">导出 CSV</button>
+</div>
+
+<div class="logwrap" id="logwrap">
+  <div class="hint" id="hint">
+    填好 URL 就能开始。<br>
+    URL / 请求头 / 请求体里都可以用占位符，每次请求自动换成新值。
+  </div>
+  <table id="tbl" style="display:none">
+    <thead>
+      <tr>
+        <th style="width:48px">#</th>
+        <th style="width:72px">时间</th>
+        <th style="width:44px">状态</th>
+        <th style="width:58px" class="num">耗时</th>
+        <th style="width:56px" class="num">大小</th>
+        <th style="width:104px">IP</th>
+        <th style="width:230px">观察头</th>
+        <th>响应体</th>
+      </tr>
+    </thead>
+    <tbody id="rows"></tbody>
+  </table>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function () {
+  'use strict';
+
+  var Z = window.ztools || {};
+  var BR = window.__bridge || {};
+  var PROBE = window.__probe || {};
+  var $ = function (id) { return document.getElementById(id); };
+
+  /* ══════════ 纯函数（可单测） ══════════ */
+
+  function pad(n, w) {
+    var s = String(n);
+    while (s.length < w) s = '0' + s;
+    return s;
+  }
+
+  /** 有序 UUID：形如 00000000-0000-4000-8000-000000000001，末 12 位十六进制递增，可直接按字符串排序 */
+  function orderedUuid(seq) {
+    var n = Number(seq);
+    if (!isFinite(n) || n < 0) n = 0;
+    return '00000000-0000-4000-8000-' + pad(Math.floor(n).toString(16), 12);
+  }
+
+  function randomStr(len) {
+    var chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+    var out = '';
+    for (var i = 0; i < (len || 6); i++) out += chars.charAt(Math.floor(Math.random() * chars.length));
+    return out;
+  }
+
+  /**
+   * 展开占位符
+   * ${i} 序号 · ${uuid} 有序 UUID · ${ts} 毫秒时间戳 · ${rand} 随机串
+   */
+  function expand(tpl, seq) {
+    if (tpl == null) return '';
+    return String(tpl)
+      .replace(/\$\{i\}/g, String(seq))
+      .replace(/\$\{uuid\}/gi, orderedUuid(seq))
+      .replace(/\$\{ts\}/g, String(Date.now()))
+      .replace(/\$\{rand\}/g, randomStr(6));
+  }
+
+  /** 解析 "Key: Value" 文本成对象，忽略空行与 # 注释 */
+  function parseHeaders(text) {
+    var out = {};
+    String(text || '').split(/\r?\n/).forEach(function (line) {
+      var s = line.trim();
+      if (!s || s.charAt(0) === '#') return;
+      var i = s.indexOf(':');
+      if (i < 0) return;
+      var k = s.slice(0, i).trim();
+      var v = s.slice(i + 1).trim();
+      if (k) out[k] = v;
+    });
+    return out;
+  }
+
+  function fmtBytes(n) {
+    if (n == null) return '-';
+    if (n < 1024) return n + 'B';
+    if (n < 1024 * 1024) return (n / 1024).toFixed(1) + 'K';
+    return (n / 1024 / 1024).toFixed(2) + 'M';
+  }
+
+  function clockStr(d) {
+    d = d || new Date();
+    var p = function (n) { return (n < 10 ? '0' : '') + n; };
+    return p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
+  }
+
+  function statusClass(code) {
+    if (!code) return '';
+    if (code < 300) return 's2';
+    if (code < 400) return 's3';
+    if (code < 500) return 's4';
+    return 's5';
+  }
+
+  function pickHeaders(headers, names) {
+    if (!names || !names.length) return [];
+    var out = [];
+    var lower = {};
+    for (var k in (headers || {})) {
+      if (Object.prototype.hasOwnProperty.call(headers, k)) lower[k.toLowerCase()] = headers[k];
+    }
+    names.forEach(function (n) {
+      var v = lower[String(n).toLowerCase()];
+      if (v != null) out.push(n + '=' + (Array.isArray(v) ? v.join(',') : v));
+    });
+    return out;
+  }
+
+  window.__probeUtil = {
+    orderedUuid: orderedUuid,
+    expand: expand,
+    parseHeaders: parseHeaders,
+    pickHeaders: pickHeaders,
+    fmtBytes: fmtBytes
+  };
+
+  /* ══════════ 状态 ══════════ */
+
+  var S = {
+    running: false, paused: false, timer: null,
+    sent: 0, ok: 0, fail: 0, bad: 0, sum: 0, min: null, max: 0,
+    records: [], pending: 0
+  };
+  var MAX_ROWS = 300;
+
+  function num(id, dflt) {
+    var v = Number($(id).value);
+    if (!isFinite(v)) return dflt;
+    return v;
+  }
+
+  function toast(msg) {
+    var t = $('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    clearTimeout(t._tm);
+    t._tm = setTimeout(function () { t.classList.remove('show'); }, 1800);
+  }
+
+  function applyTheme() {
+    var dark = false;
+    try { dark = !!Z.isDarkColors(); } catch (e) { dark = false; }
+    document.documentElement.classList.toggle('dark', dark);
+  }
+  applyTheme();
+  try { Z.onThemeChange && Z.onThemeChange(applyTheme); } catch (e) {}
+  try { Z.setExpendHeight && Z.setExpendHeight(620); } catch (e) {}
+
+  /* ══════════ 视图：填写态 / 结果态 ══════════ */
+
+  var view = 'edit';
+
+  /** 折叠条上的一行摘要 */
+  function updateSummary() {
+    var n = num('count', 0);
+    var bits = [
+      $('method').value + ' ' + (String($('url').value).trim() || '(未填 URL)'),
+      (n > 0 ? n + ' 次' : '不限次数') + ' × ' + num('interval', 0) + 'ms',
+      '超时 ' + num('timeout', 0) + 'ms'
+    ];
+    var w = String($('watch').value || '').trim();
+    if (w) bits.push('观察 ' + w);
+    $('sum').textContent = bits.join('   ·   ');
+  }
+
+  /**
+   * @param {'edit'|'result'} v
+   *   edit   ：上面填写区撑满，结果只留一条矮预览
+   *   result ：上面收成一行摘要，结果表格占满
+   */
+  function setView(v) {
+    view = v === 'result' ? 'result' : 'edit';
+    var edit = view === 'edit';
+    document.body.classList.toggle('view-edit', edit);
+    document.body.classList.toggle('view-result', !edit);
+    $('panes').style.display = edit ? 'flex' : 'none';
+    $('opts').style.display = edit ? 'flex' : 'none';
+    $('tokens').style.display = edit ? 'block' : 'none';
+    $('collapse').style.display = edit ? 'none' : 'flex';
+    $('btnView').textContent = edit ? '收起配置' : '展开配置';
+    if (!edit) updateSummary();
+  }
+
+  $('btnView').onclick = function () { setView(view === 'edit' ? 'result' : 'edit'); };
+  $('collapse').onclick = function () { setView('edit'); };
+
+  /* ══════════ 配置记忆 ══════════ */
+
+  var CFG_KEY = 'probe-cfg';
+
+  function saveCfg() {
+    try {
+      Z.dbStorage && Z.dbStorage.setItem(CFG_KEY, JSON.stringify({
+        method: $('method').value, url: $('url').value,
+        headers: $('headers').value, body: $('body').value,
+        count: $('count').value, interval: $('interval').value,
+        timeout: $('timeout').value, start: $('start').value,
+        follow: $('follow').checked, insecure: $('insecure').checked,
+        watch: $('watch').value
+      }));
+    } catch (e) {}
+  }
+
+  function loadCfg() {
+    var raw = null;
+    try { raw = Z.dbStorage && Z.dbStorage.getItem(CFG_KEY); } catch (e) {}
+    if (!raw) return;
+    var c = null;
+    try { c = JSON.parse(raw); } catch (e) { return; }
+    if (!c) return;
+    if (c.method) $('method').value = c.method;
+    if (c.url) $('url').value = c.url;
+    if (c.headers) $('headers').value = c.headers;
+    if (c.body) $('body').value = c.body;
+    if (c.count != null) $('count').value = c.count;
+    if (c.interval != null) $('interval').value = c.interval;
+    if (c.timeout != null) $('timeout').value = c.timeout;
+    if (c.start != null) $('start').value = c.start;
+    if (c.follow != null) $('follow').checked = !!c.follow;
+    if (c.insecure != null) $('insecure').checked = !!c.insecure;
+    if (c.watch) $('watch').value = c.watch;
+  }
+
+  /* ══════════ 构造请求 ══════════ */
+
+  function buildRequest(seq) {
+    var hdrText = expand($('headers').value, seq);
+    return {
+      url: expand($('url').value, seq).trim(),
+      method: $('method').value,
+      headers: parseHeaders(hdrText),
+      body: expand($('body').value, seq),
+      timeoutMs: num('timeout', 10000),
+      followRedirect: $('follow').checked,
+      insecure: $('insecure').checked
+    };
+  }
+
+  /* ══════════ 渲染 ══════════ */
+
+  function showTable() {
+    $('hint').style.display = 'none';
+    $('tbl').style.display = '';
+  }
+
+  function clearRows() {
+    $('rows').innerHTML = '';
+    S.records = [];
+    $('tbl').style.display = 'none';
+    $('hint').style.display = '';
+  }
+
+  function watchNames() {
+    return String($('watch').value || '')
+      .split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+  }
+
+  function addRow(seq, req, res) {
+    showTable();
+    var tbody = $('rows');
+    var tr = document.createElement('tr');
+    tr.className = 'clickable';
+
+    var tdSeq = document.createElement('td');
+    tdSeq.textContent = String(seq);
+
+    var tdTime = document.createElement('td');
+    tdTime.textContent = clockStr();
+
+    var tdStatus = document.createElement('td');
+    if (res && res.ok) {
+      tdStatus.textContent = String(res.status);
+      tdStatus.className = statusClass(res.status);
+    } else {
+      tdStatus.textContent = 'ERR';
+      tdStatus.className = 'err';
+    }
+
+    var tdMs = document.createElement('td');
+    tdMs.className = 'num';
+    tdMs.textContent = res && res.ms != null ? res.ms + 'ms' : '-';
+
+    var tdBytes = document.createElement('td');
+    tdBytes.className = 'num';
+    tdBytes.textContent = res && res.ok ? fmtBytes(res.bytes) : '-';
+
+    var tdIp = document.createElement('td');
+    tdIp.textContent = (res && res.ip) || '-';
+
+    var tdWatch = document.createElement('td');
+    if (res && res.ok) {
+      var wh = pickHeaders(res.headers, watchNames()).join('  ');
+      tdWatch.textContent = wh || '-';
+      tdWatch.title = wh;
+    } else {
+      tdWatch.textContent = '-';
+    }
+
+    var tdBody = document.createElement('td');
+    tdBody.className = 'body';
+    if (res && res.ok) {
+      tdBody.textContent = String(res.body || '').replace(/\s+/g, ' ').slice(0, 160) + (res.truncated ? ' …' : '');
+      tdBody.title = tdBody.textContent;
+    } else {
+      tdBody.textContent = (res && res.error) || '未知错误';
+      tdBody.className = 'body err';
+    }
+
+    [tdSeq, tdTime, tdStatus, tdMs, tdBytes, tdIp, tdWatch, tdBody].forEach(function (td) {
+      tr.appendChild(td);
+    });
+
+    // 点行展开完整响应头 + 响应体
+    tr.onclick = function () {
+      var next = tr.nextElementSibling;
+      if (next && next.classList.contains('detail')) { next.parentNode.removeChild(next); return; }
+      var dtr = document.createElement('tr');
+      dtr.className = 'detail';
+      var td = document.createElement('td');
+      td.colSpan = 8;
+      var pre = document.createElement('pre');
+      var lines = [];
+      lines.push(req.method + ' ' + req.url);
+      if (res && res.ok) {
+        lines.push('HTTP ' + res.status + ' ' + (res.statusText || '') + '  (' + res.ms + 'ms, ' + res.bytes + ' bytes)');
+        for (var k in res.headers) {
+          if (Object.prototype.hasOwnProperty.call(res.headers, k)) {
+            lines.push('  ' + k + ': ' + res.headers[k]);
+          }
+        }
+        if (res.redirects) lines.push('  (经过 ' + res.redirects + ' 次重定向 → ' + res.finalUrl + ')');
+        lines.push('');
+        lines.push(String(res.body || '') + (res.truncated ? '\n… 仅显示前 4KB' : ''));
+      } else {
+        lines.push('请求失败：' + ((res && res.error) || '未知错误'));
+      }
+      pre.textContent = lines.join('\n');
+      td.appendChild(pre);
+      dtr.appendChild(td);
+      tr.parentNode.insertBefore(dtr, tr.nextSibling);
+    };
+
+    tbody.appendChild(tr);
+    var wrap = $('logwrap');
+    var nearBottom = wrap.scrollHeight - wrap.scrollTop - wrap.clientHeight < 40;
+    if (nearBottom) wrap.scrollTop = wrap.scrollHeight;
+
+    S.records.push({
+      seq: seq, time: clockStr(), ok: !!(res && res.ok),
+      status: res && res.ok ? res.status : '',
+      ms: res && res.ms != null ? res.ms : '',
+      bytes: res && res.ok ? res.bytes : '',
+      ip: (res && res.ip) || '',
+      url: req.url,
+      watch: res && res.ok ? pickHeaders(res.headers, watchNames()).join(' ') : '',
+      body: res && res.ok ? String(res.body || '').replace(/\s+/g, ' ').slice(0, 200) : '',
+      error: res && !res.ok ? res.error : ''
+    });
+
+    // 只保留最近 MAX_ROWS 行，避免长时间跑爆内存
+    var all = tbody.querySelectorAll('tr.clickable');
+    if (all.length > MAX_ROWS) tbody.removeChild(all[0]);
+  }
+
+  function renderStats() {
+    $('stSent').textContent = S.sent;
+    $('stOk').textContent = S.ok;
+    $('stFail').textContent = S.fail;
+    $('stBad').textContent = S.bad;
+    var n = S.ok;
+    $('stAvg').textContent = n ? Math.round(S.sum / n) + 'ms' : '-';
+    $('stMin').textContent = S.min == null ? '-' : S.min + 'ms';
+    $('stMax').textContent = S.max ? S.max + 'ms' : '-';
+    var total = num('count', 0);
+    var pct = total > 0 ? Math.min(100, Math.round(S.sent / total * 100)) : 0;
+    $('progBar').style.width = pct + '%';
+    $('loading').textContent = S.pending > 0 ? '请求中…' : '';
+  }
+
+  /* ══════════ 执行循环 ══════════ */
+
+  function stopTimers() {
+    if (S.timer) { clearTimeout(S.timer); S.timer = null; }
+  }
+
+  function setButtons() {
+    $('btnStart').disabled = S.running && !S.paused;
+    $('btnPause').disabled = !S.running;
+    $('btnStop').disabled = !S.running;
+    $('btnPause').textContent = S.paused ? '继续' : '暂停';
+  }
+
+  function finish(reason) {
+    S.running = false;
+    S.paused = false;
+    stopTimers();
+    setButtons();
+    renderStats();
+    if (reason) toast(reason);
+  }
+
+  function schedule() {
+    stopTimers();
+    if (!S.running || S.paused) return;
+    var total = num('count', 0);
+    if (total > 0 && S.sent >= total) { finish('已完成 ' + S.sent + ' 次'); return; }
+    S.timer = setTimeout(fire, Math.max(0, num('interval', 1000)));
+  }
+
+  function fire() {
+    if (!S.running || S.paused) return;
+    var total = num('count', 0);
+    if (total > 0 && S.sent >= total) { finish('已完成 ' + S.sent + ' 次'); return; }
+
+    var seq = num('start', 1) + S.sent;
+    var req = buildRequest(seq);
+    if (!req.url) { finish('还没填 URL'); return; }
+
+    S.sent++;
+    S.pending++;
+    saveCfg();
+    renderStats();
+
+    var ts = Date.now();
+    Promise.resolve(PROBE.request ? PROBE.request(req) : { ok: false, error: '当前环境不支持发请求' })
+      .then(function (res) {
+        S.pending--;
+        var r = res || { ok: false, error: '空响应' };
+        if (r.ok) {
+          S.ok++;
+          if (r.status >= 400) S.bad++;
+          if (r.ms != null) {
+            S.sum += r.ms;
+            if (S.min === null || r.ms < S.min) S.min = r.ms;
+            if (r.ms > S.max) S.max = r.ms;
+          }
+        } else {
+          S.fail++;
+          if (r.ms == null) r.ms = Date.now() - ts;
+        }
+        addRow(seq, req, r);
+        renderStats();
+        // 首页失败就停，别把 100 次都打空
+        if (!r.ok && S.ok === 0 && S.fail >= 3) { finish('连续失败 3 次，已停止'); return; }
+        schedule();
+      })
+      .catch(function (e) {
+        S.pending--;
+        S.fail++;
+        addRow(seq, req, { ok: false, error: String(e && e.message || e) });
+        renderStats();
+        schedule();
+      });
+  }
+
+  function start() {
+    S.running = true;
+    S.paused = false;
+    S.sent = 0; S.ok = 0; S.fail = 0; S.bad = 0; S.sum = 0; S.min = null; S.max = 0; S.pending = 0;
+    clearRows();
+    setView('result');   // 开跑就把下面的展示区放大
+    setButtons();
+    renderStats();
+    fire();
+  }
+
+  $('btnStart').onclick = start;
+  $('btnStop').onclick = function () { finish('已停止，共 ' + S.sent + ' 次'); };
+  $('btnPause').onclick = function () {
+    if (!S.running) return;
+    S.paused = !S.paused;
+    if (S.paused) { stopTimers(); toast('已暂停'); }
+    else { toast('继续'); schedule(); }
+    setButtons();
+  };
+  $('btnClear').onclick = function () {
+    if (S.running) finish('已停止');
+    S.sent = 0; S.ok = 0; S.fail = 0; S.bad = 0; S.sum = 0; S.min = null; S.max = 0;
+    clearRows();
+    renderStats();
+  };
+  $('btnOnce').onclick = function () {
+    var seq = num('start', 1) + S.sent;
+    var req = buildRequest(seq);
+    if (!req.url) { toast('先填 URL'); return; }
+    setView('result');
+    S.pending++;
+    saveCfg();
+    renderStats();
+    Promise.resolve(PROBE.request ? PROBE.request(req) : { ok: false, error: '当前环境不支持发请求' })
+      .then(function (res) {
+        S.pending--;
+        var r = res || { ok: false, error: '空响应' };
+        addRow(seq, req, r);
+        renderStats();
+      });
+  };
+
+  /* ══════════ 复制 / 导出 ══════════ */
+
+  function recordsCsv() {
+    var head = ['序号', '时间', '成功', '状态', '耗时ms', '字节', 'IP', 'URL', '观察头', '响应体', '错误'];
+    var lines = [head.join(',')];
+    var esc = function (v) {
+      var s = v == null ? '' : String(v);
+      return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+    };
+    S.records.forEach(function (r) {
+      lines.push([r.seq, r.time, r.ok ? 1 : 0, r.status, r.ms, r.bytes, r.ip, r.url, r.watch, r.body, r.error]
+        .map(esc).join(','));
+    });
+    return lines.join('\n');
+  }
+
+  function doCopy(text) {
+    try { if (Z.copyText && Z.copyText(text) === true) return 'copyText'; } catch (e) {}
+    try { if (BR.writeClipboard && BR.writeClipboard(text) === true) return 'bridge'; } catch (e) {}
+    try { if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(text); return 'navigator'; } } catch (e) {}
+    try {
+      var ta = document.createElement('textarea');
+      ta.value = text; ta.style.cssText = 'position:fixed;top:-1000px;left:0';
+      document.body.appendChild(ta); ta.focus(); ta.select();
+      var ok = document.execCommand('copy');
+      document.body.removeChild(ta);
+      if (ok) return 'exec';
+    } catch (e) {}
+    return '';
+  }
+
+  $('btnCopyCsv').onclick = function () {
+    if (!S.records.length) { toast('还没有结果'); return; }
+    var how = doCopy(recordsCsv());
+    toast(how ? '已复制 ' + S.records.length + ' 行（' + how + '）' : '复制失败');
+  };
+
+  $('btnExport').onclick = function () {
+    if (!S.records.length) { toast('还没有结果'); return; }
+    var text = recordsCsv();
+    var d = new Date(), p = function (n) { return (n < 10 ? '0' : '') + n; };
+    var name = 'http-probe-' + d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + '-' + p(d.getHours()) + p(d.getMinutes()) + '.csv';
+    var file = '';
+    if (Z.showSaveDialog && BR.writeTextFile) {
+      var chosen;
+      try {
+        chosen = Z.showSaveDialog({
+          title: '保存探测结果',
+          defaultPath: name,
+          filters: [{ name: 'CSV 文件', extensions: ['csv'] }]
+        });
+      } catch (e) { chosen = null; }
+      if (chosen === undefined || chosen === null) { toast('已取消保存'); return; }
+      if (chosen && BR.writeTextFile(chosen, text)) { file = chosen; }
+    }
+    if (!file && BR.saveFile) { try { file = BR.saveFile(name, text); } catch (e) { file = ''; } }
+    if (file) {
+      try { Z.shellShowItemInFolder && Z.shellShowItemInFolder(file); } catch (e) {}
+      toast('已导出：' + file);
+      return;
+    }
+    try {
+      var blob = new Blob(['\ufeff' + text], { type: 'text/csv;charset=utf-8' });
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = name;
+      document.body.appendChild(a); a.click();
+      setTimeout(function () {
+        if (a.parentNode) a.parentNode.removeChild(a);
+        URL.revokeObjectURL(a.href);
+      }, 2000);
+      toast('已生成 ' + name + '，选择保存位置即可');
+    } catch (e) { toast('导出失败'); }
+  };
+
+  /* ══════════ 占位符提示 ══════════ */
+
+  function refreshUuidHint() {
+    var start = num('start', 1);
+    $('uuidHint').textContent = '形如 ' + orderedUuid(start) + '，每次尾号 +1';
+  }
+
+  var tokens = document.querySelectorAll('.tokens code');
+  for (var i = 0; i < tokens.length; i++) {
+    (function (el) {
+      el.title = '点击插入到 URL';
+      el.onclick = function () {
+        var url = $('url');
+        var pos = url.selectionStart == null ? url.value.length : url.selectionStart;
+        var ins = el.dataset.tip;
+        url.value = url.value.slice(0, pos) + ins + url.value.slice(pos);
+        url.focus();
+        url.selectionStart = url.selectionEnd = pos + ins.length;
+      };
+    })(tokens[i]);
+  }
+
+  $('start').oninput = refreshUuidHint;
+  $('count').oninput = renderStats;
+
+  /* ══════════ 入口 ══════════ */
+
+  loadCfg();
+  refreshUuidHint();
+  renderStats();
+  setButtons();
+  setView('edit');
+
+  try {
+    Z.onPluginEnter && Z.onPluginEnter(function (action) {
+      var p = action && action.payload;
+      if (typeof p === 'string' && /^https?:\/\//i.test(p.trim())) {
+        $('url').value = p.trim();
+        toast('已带入 URL');
+      }
+    });
+  } catch (e) {}
+})();
+</script>
+</body>
+</html>
