@@ -1,0 +1,17 @@
+{
+  "name": "kanban",
+  "title": "看板",
+  "description": "单人看板。改动先落在本地，再和服务器对齐。",
+  "version": "0.1.3",
+  "author": "kevinxia",
+  "main": "index.html",
+  "preload": "preload.js",
+  "logo": "logo.png",
+  "features": [
+    {
+      "code": "main",
+      "explain": "打开看板",
+      "cmds": ["看板", "kanban", "todo"]
+    }
+  ]
+}

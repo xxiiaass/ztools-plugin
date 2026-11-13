@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>看板预览</title>
+  <link rel="stylesheet" href="./src/board.css?v=16">
+</head>
+<body>
+  <div id="app"></div>
+  <script>
+    window.__bridge = {
+      load: function () {
+        try { return JSON.parse(localStorage.getItem('kanban-preview') || 'null') } catch (e) { return null }
+      },
+      save: function (data) { localStorage.setItem('kanban-preview', JSON.stringify(data)) }
+    }
+  </script>
+  <script type="module" src="./src/main.js?v=16"></script>
+</body>
+</html>
