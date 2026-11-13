@@ -1,8 +1,8 @@
 {
   "name": "cls-log",
   "title": "CLS 日志查询",
-  "description": "选中/粘贴一个 UUID，选择环境后用 Firefox 打开腾讯云 CLS 检索页",
-  "version": "0.1.0",
+  "description": "选中/粘贴一个 ID（UUID 或任意关键词），选择环境后用 Firefox 打开腾讯云 CLS 检索页",
+  "version": "0.1.1",
   "author": "kevinxia",
   "main": "index.html",
   "preload": "preload.js",

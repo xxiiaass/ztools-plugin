@@ -1,0 +1,44 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "low-contrast",
+        "value": "*",
+        "files": [
+          ".superpowers/brainstorm/37373-1794475194/content/card-face-v2.html"
+        ],
+        "createdAt": "2026-11-12T09:51:38.576Z",
+        "reason": "user confirmed: due-today chip copies their Teambition screenshot, white text on bright orange"
+      },
+      {
+        "rule": "low-contrast",
+        "value": "*",
+        "files": [
+          ".superpowers/brainstorm/37373-1794475194/content/overdue-cards.html"
+        ],
+        "createdAt": "2026-11-12T12:25:14.344Z",
+        "reason": "user confirmed: overdue card background is the urgent red, due-today chip is the Teambition orange screenshot"
+      },
+      {
+        "rule": "low-contrast",
+        "value": "*",
+        "files": [
+          ".superpowers/brainstorm/37373-1794475194/content/overdue-chip.html"
+        ],
+        "createdAt": "2026-11-12T12:31:52.161Z",
+        "reason": "user confirmed: due-today chip is white on their Teambition orange screenshot; completed titles stay the light gray they approved"
+      },
+      {
+        "rule": "side-tab",
+        "value": "*",
+        "files": [
+          ".superpowers/brainstorm/37373-1794475194/content/overdue-chip.html"
+        ],
+        "createdAt": "2026-11-12T12:31:52.176Z",
+        "reason": "user confirmed: urgent priority is the red left edge copied from their Teambition board"
+      }
+    ]
+  }
+}

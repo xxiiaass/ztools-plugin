@@ -83,8 +83,11 @@
   .tokens code:hover { background: var(--accent-soft); border-color: var(--accent); }
 
   .stats { flex: 0 0 auto; display: flex; gap: 14px; align-items: center;
-           padding: 4px 10px 5px; border-top: 1px solid var(--line); color: var(--fg-dim); }
-  .stats b { color: var(--fg); font-variant-numeric: tabular-nums; }
+           padding: 4px 10px 5px; border-top: 1px solid var(--line); color: var(--fg-dim);
+           flex-wrap: nowrap; overflow: hidden; }
+  /* 统计项禁止换行：数字变宽时宁可用占位宽度，也不能折行把整栏撑高 */
+  .stats > span { white-space: nowrap; flex: 0 0 auto; }
+  .stats b { color: var(--fg); font-variant-numeric: tabular-nums; display: inline-block; min-width: 3ch; }
   .stats .bad b { color: var(--bad); }
   .stats .ok b { color: var(--ok); }
   .prog { flex: 0 0 120px; height: 4px; background: var(--bg-soft); border-radius: 3px; overflow: hidden; }
@@ -188,7 +191,7 @@ X-Trace: ${uuid}"></textarea>
   <span>最慢 <b id="stMax">-</b></span>
   <span class="prog"><i id="progBar"></i></span>
   <span class="spacer"></span>
-  <span id="loading" style="color:var(--fg-dim)"></span>
+  <span id="loading" style="color:var(--fg-dim);visibility:hidden;min-width:5em">请求中…</span>
   <button class="btn" id="btnCopyCsv" style="padding:2px 8px">复制 CSV</button>
   <button class="btn" id="btnExport" style="padding:2px 8px">导出 CSV</button>
 </div>
@@ -642,7 +645,10 @@ X-Trace: ${uuid}"></textarea>
     var total = num('count', 0);
     var pct = total > 0 ? Math.min(100, Math.round(S.sent / total * 100)) : 0;
     $('progBar').style.width = pct + '%';
-    $('loading').textContent = S.pending > 0 ? '请求中…' : '';
+    // 请求中…常驻占位，只切可见性，避免宽度出现/消失导致界面抖动
+    var ld = $('loading');
+    if (S.pending > 0) { ld.textContent = '请求中…'; ld.style.visibility = 'visible'; }
+    else { ld.style.visibility = 'hidden'; }
   }
 
   /* ══════════ 执行循环 ══════════ */

@@ -2,7 +2,7 @@
   "name": "http-probe",
   "title": "HTTP 循环探测",
   "description": "按次数和间隔循环请求一个 URL，每次自动换有序 UUID / 序号 / 时间戳，实时看状态码、耗时、真实 IP 和指定响应头",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "author": "kevinxia",
   "main": "index.html",
   "preload": "preload.js",

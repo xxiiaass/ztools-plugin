@@ -57,11 +57,26 @@ var TARGETS = [
 
 /* ══════════════ 纯函数 ══════════════ */
 
-/** 从任意文本里抠出第一个 UUID */
+/** 从任意文本里抠出第一个 UUID（严格格式，用于自动匹配场景） */
 function extractUuid(text) {
   var s = String(text == null ? '' : text)
   var m = s.match(/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/)
   return m ? m[0] : ''
+}
+
+/**
+ * 取实际要检索的词：
+ * 1. 优先从文本里抠标准 UUID；
+ * 2. 抠不到就退回原始文本（去引号、去首尾空白），
+ *    这样手动进入插件时，非标准格式的 ID 也能直接查。
+ */
+function getQuery(text) {
+  var s = String(text == null ? '' : text).trim()
+  if (!s) return ''
+  var uuid = extractUuid(s)
+  if (uuid) return uuid
+  // 去掉包裹用的引号
+  return s.replace(/^['"]+/, '').replace(/['"]+$/, '').trim()
 }
 
 /** base64（URL 安全：+ / 编码，去掉尾部 =） */
@@ -91,14 +106,14 @@ function buildUrl(target, uuid) {
   return 'https://console.cloud.tencent.com/cls/search?' + parts.join('&')
 }
 
-function listItems(uuid) {
+function listItems(query) {
   var items = []
   for (var i = 0; i < TARGETS.length; i++) {
     items.push({
       key: TARGETS[i].key,
       title: TARGETS[i].title,
-      description: TARGETS[i].description + '　→　' + uuid,
-      uuid: uuid
+      description: TARGETS[i].description + '　→　' + query,
+      uuid: query
     })
   }
   return items
@@ -188,13 +203,13 @@ function makeList() {
     args: {
       placeholder: '选择环境（可输入过滤）',
       enter: function (action, setList) {
-        var uuid = extractUuid(action && action.payload ? action.payload : '')
-        if (!uuid) uuid = extractUuid(readClipboard())
-        if (!uuid) { setList([{ title: '没找到 UUID', description: '请复制一个形如 f2d5cf0f-cf0d-4fec-b9d6-b1f46bb3be09 的 ID' }]); return; }
+        var uuid = getQuery(action && action.payload ? action.payload : '')
+        if (!uuid) uuid = getQuery(readClipboard())
+        if (!uuid) { setList([{ title: '没找到可检索的 ID', description: '请选中/复制一个 ID，或从文本里带上 ID 再进入' }]); return; }
         setList(listItems(uuid))
       },
       search: function (action, text, setList) {
-        var uuid = extractUuid(action && action.payload ? action.payload : '') || extractUuid(readClipboard())
+        var uuid = getQuery(action && action.payload ? action.payload : '') || getQuery(readClipboard())
         var all = listItems(uuid)
         var kw = String(text || '').trim().toLowerCase()
         if (!kw) { setList(all); return; }
@@ -231,5 +246,5 @@ window.exports = {
 
 // 便于单测
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { extractUuid: extractUuid, toQueryBase64: toQueryBase64, buildUrl: buildUrl, TARGETS: TARGETS }
+  module.exports = { extractUuid: extractUuid, getQuery: getQuery, toQueryBase64: toQueryBase64, buildUrl: buildUrl, TARGETS: TARGETS }
 }
