@@ -1,6 +1,6 @@
-import { insertIndex } from './select.js?v=16'
-import { applyLocal, applyRemote, emptyState, failImport, finishImport, flush, settle } from './state.js?v=16'
-import { viewModel } from './view.js?v=16'
+import { insertIndex } from './select.js?v=20'
+import { applyLocal, applyRemote, emptyState, failImport, finishImport, flush, settle } from './state.js?v=20'
+import { viewModel } from './view.js?v=20'
 
 const app = document.querySelector('#app')
 let state = emptyState()
@@ -22,7 +22,19 @@ function id() {
 }
 
 function persist() {
-  window.__bridge?.save?.({ state, settings })
+  window.__bridge?.save?.({ state, settings, projectId: ui.projectId })
+}
+
+function closeHost() {
+  const z = window.ztools
+  if (!z) return
+  let type = 'main'
+  try { type = z.getWindowType() || 'main' } catch (e) {}
+  if (type === 'detach') {
+    void z.outPlugin(true)
+    return
+  }
+  void z.hideMainWindow()
 }
 
 function act(op) {
@@ -98,10 +110,27 @@ function syncSoon() {
   setTimeout(() => { void sync() }, 0)
 }
 
+function captureScroll() {
+  return {
+    board: app.querySelector('.board')?.scrollLeft || 0,
+    detail: app.querySelector('.detail')?.scrollTop || 0,
+  }
+}
+
+function applyScroll(saved) {
+  const board = app.querySelector('.board')
+  if (board) board.scrollLeft = saved.board
+  const detail = app.querySelector('.detail')
+  if (detail) detail.scrollTop = saved.detail
+}
+
 function paint() {
+  const saved = captureScroll()
   ui.now = new Date()
   const vm = viewModel(state, ui)
+  const previousProject = ui.projectId
   ui.projectId = vm.projectId
+  if (ui.projectId !== previousProject) persist()
   const snap = state.snapshot
   const open = snap.cards.find((card) => card.id === ui.openCardId)
   app.innerHTML = `
@@ -112,6 +141,7 @@ function paint() {
       <button type="button" data-menu="filter">筛选${filterCount() ? ' ' + filterCount() : ''} ▾</button>
       <button type="button" data-menu="hidden">已隐藏 ${vm.hiddenLists.length}</button>
       <button type="button" data-act="settings">设置</button>
+      <button type="button" class="host-close" data-act="close-host" aria-label="关闭">×</button>
     </header>
     ${vm.banner ? `<div class="banner">${escape(vm.banner)}</div>` : ''}
     ${composerBar()}
@@ -128,6 +158,11 @@ function paint() {
     ${open ? detail(open, snap) : ''}
   `
   placeMenu()
+  applyScroll(saved)
+  requestAnimationFrame(() => {
+    applyScroll(saved)
+    requestAnimationFrame(() => applyScroll(saved))
+  })
   paintedData = JSON.stringify(state.snapshot)
   paintedError = state.syncError
 }
@@ -135,12 +170,13 @@ function paint() {
 function column(list, vm) {
   const cards = vm.cards.filter((card) => card.listId === list.id)
   const composing = ui.composer && ui.composer.kind === 'card' && ui.composer.listId === list.id
+  const renaming = ui.composer?.kind === 'rename' && ui.composer.listId === list.id
   return `<section class="col" data-list="${list.id}">
-    <header class="col-head" draggable="true">
+    ${renaming ? `<div class="col-rename">${composerFields()}</div>` : `<header class="col-head" draggable="true">
       <span class="col-name">${escape(list.name)}</span>
       <span class="col-count">${cards.length}</span>
       <button type="button" class="col-more" data-menu="col:${list.id}">···</button>
-    </header>
+    </header>`}
     ${composing ? composerFields() : `<button type="button" class="add-card" data-act="add-card" data-list="${list.id}">+</button>`}
     <div class="col-cards">${cards.map(cardView).join('')}</div>
   </section>`
@@ -317,7 +353,7 @@ function commentTime(iso) {
 const PRI_LABEL = { low: '低', normal: '普通', high: '优先', urgent: '紧急' }
 
 function composerBar() {
-  if (!ui.composer || ['card', 'list', 'tag', 'sub'].includes(ui.composer.kind)) return ''
+  if (!ui.composer || ['card', 'list', 'tag', 'sub', 'rename'].includes(ui.composer.kind)) return ''
   return composerFields()
 }
 
@@ -347,7 +383,7 @@ function openComposer(kind, extra) {
   closeMenu()
   paint()
   const input = document.querySelector('#composer-input')
-  if (input) input.focus()
+  if (input) input.focus({ preventScroll: true })
 }
 
 function submitComposer() {
@@ -457,7 +493,7 @@ app.addEventListener('click', (event) => {
     paint()
     return
   }
-  if (actName === 'pick-project') { ui.projectId = button.dataset.id; closeMenu(); paint(); return }
+  if (actName === 'pick-project') { ui.projectId = button.dataset.id; closeMenu(); paint(); persist(); return }
   if (actName === 'add-project') { openComposer('project'); return }
   if (actName === 'add-list') { openComposer('list'); return }
   if (actName === 'add-card') { openComposer('card', { listId: button.dataset.list }); return }
@@ -471,6 +507,7 @@ app.addEventListener('click', (event) => {
   if (actName === 'open') { ui.openCardId = button.dataset.card; paint(); return }
   if (actName === 'close') { ui.openCardId = ''; paint(); return }
   if (actName === 'settings') { ui.settingsOpen = true; closeMenu(); paint(); return }
+  if (actName === 'close-host') { closeHost(); return }
   if (actName === 'close-settings') { ui.settingsOpen = false; paint(); return }
   if (actName === 'save-settings') {
     settings = { base: document.querySelector('#set-base').value.trim(), token: document.querySelector('#set-token').value.trim() }
@@ -498,7 +535,11 @@ app.addEventListener('click', (event) => {
     if (confirm('删除这个列表和里面的卡片？')) act({ id: id(), type: 'list.delete', payload: { id: button.dataset.id } })
     return
   }
-  if (actName === 'rename-list') { openComposer('rename', { listId: button.dataset.id }); return }
+  if (actName === 'rename-list') {
+    const list = state.snapshot.lists.find((item) => item.id === button.dataset.id)
+    openComposer('rename', { listId: button.dataset.id, text: list?.name || '' })
+    return
+  }
   if (actName === 'delete-card') {
     if (confirm('删除这张卡片？')) { ui.openCardId = ''; act({ id: id(), type: 'card.delete', payload: { id: button.dataset.card } }) }
     return
@@ -724,6 +765,7 @@ if (saved?.state?.snapshot && Array.isArray(saved.state.snapshot.projects)) {
   if (typeof state.syncError !== 'string') state.syncError = ''
 }
 if (saved?.settings) settings = saved.settings
+if (typeof saved?.projectId === 'string') ui.projectId = saved.projectId
 if (!state.snapshot.projects.length) {
   const projectId = id()
   const listId = id()

@@ -3,18 +3,29 @@
 <head>
   <meta charset="utf-8">
   <title>看板预览</title>
-  <link rel="stylesheet" href="./src/board.css?v=16">
+  <link rel="stylesheet" href="./src/board.css?v=20">
 </head>
 <body>
   <div id="app"></div>
   <script>
+    var testSettings = {
+      base: 'http://kevinxia.online:3003',
+      token: 'e2b750fe847c4673697c48043edcb08b'
+    }
     window.__bridge = {
       load: function () {
-        try { return JSON.parse(localStorage.getItem('kanban-preview') || 'null') } catch (e) { return null }
+        var data = null
+        try { data = JSON.parse(localStorage.getItem('kanban-preview-test') || 'null') } catch (e) {}
+        if (!data || typeof data !== 'object') data = {}
+        data.settings = testSettings
+        return data
       },
-      save: function (data) { localStorage.setItem('kanban-preview', JSON.stringify(data)) }
+      save: function (data) {
+        if (data) data.settings = testSettings
+        localStorage.setItem('kanban-preview-test', JSON.stringify(data))
+      }
     }
   </script>
-  <script type="module" src="./src/main.js?v=16"></script>
+  <script type="module" src="./src/main.js?v=20"></script>
 </body>
 </html>

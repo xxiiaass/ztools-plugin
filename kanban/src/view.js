@@ -1,5 +1,5 @@
-import { duePresentation } from './due.js?v=16'
-import { matchCard, subtaskPreview } from './select.js?v=16'
+import { duePresentation } from './due.js?v=20'
+import { matchCard, subtaskPreview } from './select.js?v=20'
 
 const EDGES = { low: '#8a8a8a', normal: '', high: '#d46b08', urgent: '#cf1322' }
 

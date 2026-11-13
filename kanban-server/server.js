@@ -10,16 +10,20 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const port = Number(process.env.PORT || 3002)
 const token = process.env.KANBAN_TOKEN || ''
 const dbPath = process.env.DB_PATH || path.join(__dirname, 'data', 'board.db')
+const weeklyMail = process.env.KANBAN_WEEKLY !== '0'
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   fs.mkdirSync(path.dirname(dbPath), { recursive: true })
   const box = { db: openDb(dbPath) }
-  copySmtpFrom(box.db, process.env.BOOKKEEPING_DB || '/root/projects/bookkeeping/data/zhangben.db')
+  if (weeklyMail) copySmtpFrom(box.db, process.env.BOOKKEEPING_DB || '/root/projects/bookkeeping/data/zhangben.db')
   const app = createApp(box.db, { token, dbPath, box })
   app.listen(port, () => {
     console.log(`看板服务已启动：http://127.0.0.1:${port}`)
   })
-  setInterval(() => {
+  if (!weeklyMail) {
+    console.log('[backup] 已关闭每周邮件')
+  }
+  if (weeklyMail) setInterval(() => {
     const row = box.db.prepare(`SELECT value FROM meta WHERE key = 'last_backup_date'`).get()
     const now = new Date()
     if (!shouldSendWeekly(now, row?.value || '')) return
