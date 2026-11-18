@@ -5,12 +5,15 @@
   background: #f3f5f7;
 }
 * { box-sizing: border-box; }
-body { margin: 0; background: #f3f5f7; }
+html, body, #app { height: 100%; }
+body { margin: 0; background: #f3f5f7; overflow: hidden; }
+#app { display: flex; flex-direction: column; min-height: 0; }
 button, input, textarea { font: inherit; color: inherit; }
 button { cursor: pointer; }
 
 .top {
   position: relative;
+  flex: 0 0 auto;
   display: flex;
   gap: 10px;
   align-items: center;
@@ -53,11 +56,12 @@ button { cursor: pointer; }
 
 .board {
   display: flex;
+  flex: 1 1 auto;
   gap: 18px;
   align-items: flex-start;
+  min-height: 0;
   padding: 18px;
-  overflow-x: auto;
-  min-height: 78vh;
+  overflow: auto;
 }
 .col {
   width: 280px;
@@ -138,7 +142,7 @@ button { cursor: pointer; }
 .edge i { position: absolute; left: 0; top: 8px; bottom: 8px; width: 4px; border-radius: 4px; }
 .main { flex: 1; padding: 12px 14px 12px 2px; min-width: 0; }
 .line { display: flex; gap: 8px; align-items: flex-start; }
-.title { font-weight: 500; line-height: 1.45; border: 0; background: none; padding: 0; text-align: left; box-shadow: none; }
+.title { font-weight: 400; line-height: 1.45; border: 0; background: none; padding: 0; text-align: left; box-shadow: none; }
 .title.done { color: #b5b5b5; font-weight: 400; text-decoration: line-through; }
 .box {
   width: 16px; height: 16px; margin-top: 2px; flex: 0 0 16px;
@@ -234,6 +238,8 @@ button { cursor: pointer; }
 }
 .menu button { display: block; width: 100%; text-align: left; border: 0; background: transparent; box-shadow: none; border-radius: 10px; }
 .menu button:hover { background: #f4f6f8; }
+.menu button.danger { color: #cf1322; margin-top: 6px; border-top: 1px solid #f0f1f3; border-radius: 0; }
+.menu button.danger:hover { background: #fff1f0; }
 .detail {
   position: fixed; top: 12px; right: 12px; bottom: 12px; width: min(440px, 92vw);
   background: #fff; border-radius: 18px; box-shadow: 0 16px 48px rgba(15, 23, 42, .16);

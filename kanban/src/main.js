@@ -1,6 +1,6 @@
-import { insertIndex } from './select.js?v=20'
-import { applyLocal, applyRemote, emptyState, failImport, finishImport, flush, settle } from './state.js?v=20'
-import { viewModel } from './view.js?v=20'
+import { insertIndex } from './select.js?v=21'
+import { applyLocal, applyRemote, emptyState, failImport, finishImport, flush, settle } from './state.js?v=21'
+import { viewModel } from './view.js?v=21'
 
 const app = document.querySelector('#app')
 let state = emptyState()
@@ -208,7 +208,7 @@ function cardView(card) {
 function projectMenu(vm) {
   return `<div class="menu">${vm.projects.map((project) =>
     `<button type="button" data-act="pick-project" data-id="${project.id}">${escape(project.name)}</button>`).join('')}
-    <button type="button" data-act="delete-project" data-id="${vm.projectId}">删除当前项目</button></div>`
+    <button type="button" class="danger" data-act="delete-project" data-id="${vm.projectId}">删除「${escape(nameOf(state.snapshot.projects, vm.projectId))}」</button></div>`
 }
 
 function filterMenu() {
@@ -585,7 +585,8 @@ app.addEventListener('click', (event) => {
     })
   }
   if (actName === 'delete-project') {
-    if (confirm('删除这个项目和里面的看板？')) {
+    const projectName = nameOf(state.snapshot.projects, button.dataset.id) || '这个项目'
+    if (confirm(`删除项目「${projectName}」？里面的列表和卡片会一起删掉。`)) {
       const projectId = button.dataset.id
       if (ui.projectId === projectId) ui.projectId = ''
       closeMenu()
@@ -620,9 +621,22 @@ app.addEventListener('input', (event) => {
   }
 })
 
+let skipComposerEnter = false
+app.addEventListener('compositionstart', (event) => {
+  if (event.target.id === 'composer-input') skipComposerEnter = false
+})
+app.addEventListener('compositionend', (event) => {
+  if (event.target.id !== 'composer-input') return
+  skipComposerEnter = true
+  setTimeout(() => { skipComposerEnter = false }, 80)
+})
 app.addEventListener('keydown', (event) => {
   if (event.target.id !== 'composer-input') return
-  if (event.key === 'Enter') { event.preventDefault(); submitComposer() }
+  if (event.key === 'Enter') {
+    if (event.isComposing || event.keyCode === 229 || skipComposerEnter) return
+    event.preventDefault()
+    submitComposer()
+  }
   if (event.key === 'Escape') { ui.composer = null; paint() }
 })
 
