@@ -1,6 +1,6 @@
-import { insertIndex } from './select.js?v=25'
-import { applyLocal, applyRemote, emptyState, failImport, finishImport, flush, settle } from './state.js?v=25'
-import { viewModel } from './view.js?v=25'
+import { insertIndex } from './select.js?v=26'
+import { applyLocal, applyRemote, emptyState, failImport, finishImport, flush, settle } from './state.js?v=26'
+import { viewModel } from './view.js?v=26'
 
 const app = document.querySelector('#app')
 let state = emptyState()
@@ -139,17 +139,27 @@ function syncSoon() {
 }
 
 function captureScroll() {
+  const board = app.querySelector('.board')
+  const detail = app.querySelector('aside.detail:not(.settings)')
+  const page = document.scrollingElement
   return {
-    board: app.querySelector('.board')?.scrollLeft || 0,
-    detail: app.querySelector('.detail')?.scrollTop || 0,
+    boardLeft: board?.scrollLeft || 0,
+    boardTop: board?.scrollTop || 0,
+    detail: detail?.scrollTop || 0,
+    pageTop: page?.scrollTop || 0,
   }
 }
 
 function applyScroll(saved) {
   const board = app.querySelector('.board')
-  if (board) board.scrollLeft = saved.board
-  const detail = app.querySelector('.detail')
+  if (board) {
+    board.scrollLeft = saved.boardLeft
+    board.scrollTop = saved.boardTop
+  }
+  const detail = app.querySelector('aside.detail:not(.settings)')
   if (detail) detail.scrollTop = saved.detail
+  const page = document.scrollingElement
+  if (page) page.scrollTop = saved.pageTop
 }
 
 function paint() {
@@ -193,6 +203,7 @@ function paint() {
     applyScroll(saved)
     requestAnimationFrame(() => applyScroll(saved))
   })
+  setTimeout(() => applyScroll(saved), 0)
   paintedData = JSON.stringify(state.snapshot)
   paintedError = state.syncError
 }
