@@ -35,7 +35,9 @@ CREATE TABLE IF NOT EXISTS subtasks (
 );
 CREATE TABLE IF NOT EXISTS tags (
   id TEXT PRIMARY KEY,
-  name TEXT NOT NULL
+  name TEXT NOT NULL,
+  style TEXT NOT NULL DEFAULT 'blue',
+  font TEXT NOT NULL DEFAULT 'sans'
 );
 CREATE TABLE IF NOT EXISTS card_tags (
   card_id TEXT NOT NULL,
@@ -60,8 +62,17 @@ export function openDb(filePath) {
   const db = new Database(filePath)
   db.pragma('journal_mode = WAL')
   db.exec(SCHEMA)
+  ensureColumn(db, 'cards', 'created_at', `ALTER TABLE cards ADD COLUMN created_at TEXT NOT NULL DEFAULT ''`)
+  ensureColumn(db, 'cards', 'updated_at', `ALTER TABLE cards ADD COLUMN updated_at TEXT NOT NULL DEFAULT ''`)
+  ensureColumn(db, 'tags', 'style', `ALTER TABLE tags ADD COLUMN style TEXT NOT NULL DEFAULT 'blue'`)
+  ensureColumn(db, 'tags', 'font', `ALTER TABLE tags ADD COLUMN font TEXT NOT NULL DEFAULT 'sans'`)
   db.prepare(`INSERT INTO meta(key, value) VALUES ('kanban', '1') ON CONFLICT(key) DO NOTHING`).run()
   return db
+}
+
+function ensureColumn(db, table, column, sql) {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all()
+  if (!cols.some((col) => col.name === column)) db.exec(sql)
 }
 
 export function fileIsKanbanBackup(filePath) {
@@ -85,11 +96,11 @@ export function readSnapshot(db) {
     projects: db.prepare(`SELECT id, name, position FROM projects ORDER BY position, id`).all(),
     lists: db.prepare(`SELECT id, project_id AS projectId, name, position, hidden FROM lists ORDER BY position, id`).all()
       .map((row) => ({ ...row, hidden: Boolean(row.hidden) })),
-    cards: db.prepare(`SELECT id, list_id AS listId, title, done, priority, due_at AS dueAt, position FROM cards ORDER BY position, id`).all()
+    cards: db.prepare(`SELECT id, list_id AS listId, title, done, priority, due_at AS dueAt, position, created_at AS createdAt, updated_at AS updatedAt FROM cards ORDER BY position, id`).all()
       .map((row) => ({ ...row, done: Boolean(row.done) })),
     subtasks: db.prepare(`SELECT id, card_id AS cardId, title, done, position FROM subtasks ORDER BY position, id`).all()
       .map((row) => ({ ...row, done: Boolean(row.done) })),
-    tags: db.prepare(`SELECT id, name FROM tags ORDER BY name, id`).all(),
+    tags: db.prepare(`SELECT id, name, style, font FROM tags ORDER BY name, id`).all(),
     cardTags: db.prepare(`SELECT card_id AS cardId, tag_id AS tagId FROM card_tags ORDER BY card_id, tag_id`).all(),
     comments: db.prepare(`SELECT id, card_id AS cardId, body, created_at AS createdAt FROM comments ORDER BY created_at, id`).all(),
     images: images.map((row) => ({

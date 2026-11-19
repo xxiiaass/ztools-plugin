@@ -16,6 +16,26 @@ test('服务器失败后本地勾选还在，下一次操作继续排进队列',
   assert.deepEqual(state.queue.map((op) => op.type), ['card.create', 'card.patch'])
 })
 
+test('新标签默认蓝色黑体，可以改成指定样式', () => {
+  let state = applyLocal(emptyState(), { id: 't', type: 'tag.create', payload: { id: 't', name: '部署' } })
+  assert.equal(state.snapshot.tags[0].style, 'blue')
+  assert.equal(state.snapshot.tags[0].font, 'sans')
+  state = applyLocal(state, { id: 'p', type: 'tag.patch', payload: { id: 't', style: 'rose', font: 'kai' } })
+  assert.equal(state.snapshot.tags[0].style, 'rose')
+  assert.equal(state.snapshot.tags[0].font, 'kai')
+})
+
+test('新卡片插到列表最上面', () => {
+  let state = applyLocal(emptyState(), cardCreate('old', '旧'))
+  state = applyLocal(state, cardCreate('new', '新'))
+  const order = state.snapshot.cards
+    .slice()
+    .sort((a, b) => a.position - b.position)
+    .map((card) => card.id)
+  assert.deepEqual(order, ['new', 'old'])
+  assert.equal(state.snapshot.cards.find((card) => card.id === 'new').position, 0)
+})
+
 test('藏起列表不改它的 position', () => {
   let state = applyLocal(emptyState(), { id: 'p', type: 'project.create', payload: { id: 'p', name: '需求管理' } })
   for (const id of ['a', 'b', 'c']) {

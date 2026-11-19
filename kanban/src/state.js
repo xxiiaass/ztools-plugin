@@ -71,7 +71,12 @@ function applyOne(snapshot, op) {
         if (list) list.position = index
       })
       break
-    case 'card.create':
+    case 'card.create': {
+      if (next.cards.some((card) => card.id === p.id)) break
+      const now = p.createdAt || new Date().toISOString()
+      for (const card of next.cards) {
+        if (card.listId === p.listId) card.position += 1
+      }
       next.cards.push({
         id: p.id,
         listId: p.listId,
@@ -79,9 +84,12 @@ function applyOne(snapshot, op) {
         done: false,
         priority: 'normal',
         dueAt: null,
-        position: nextPosition(next.cards.filter((card) => card.listId === p.listId)),
+        position: 0,
+        createdAt: now,
+        updatedAt: now,
       })
       break
+    }
     case 'card.patch': {
       const card = next.cards.find((item) => item.id === p.id)
       if (!card) break
@@ -89,6 +97,7 @@ function applyOne(snapshot, op) {
       if (p.done !== undefined) card.done = Boolean(p.done)
       if (p.priority !== undefined) card.priority = p.priority
       if (p.dueAt !== undefined) card.dueAt = p.dueAt
+      card.updatedAt = new Date().toISOString()
       break
     }
     case 'card.move': {
@@ -102,6 +111,7 @@ function applyOne(snapshot, op) {
       others.splice(index, 0, card)
       card.listId = p.listId
       others.forEach((item, i) => { item.position = i })
+      card.updatedAt = new Date().toISOString()
       if (from !== p.listId) {
         next.cards
           .filter((item) => item.listId === from)
@@ -133,8 +143,22 @@ function applyOne(snapshot, op) {
       next.subtasks = next.subtasks.filter((item) => item.id !== p.id)
       break
     case 'tag.create':
-      if (!next.tags.some((tag) => tag.id === p.id)) next.tags.push({ id: p.id, name: p.name })
+      if (!next.tags.some((tag) => tag.id === p.id)) {
+        next.tags.push({
+          id: p.id,
+          name: p.name,
+          style: p.style || 'blue',
+          font: p.font || 'sans',
+        })
+      }
       break
+    case 'tag.patch': {
+      const tag = next.tags.find((item) => item.id === p.id)
+      if (!tag) break
+      if (p.style !== undefined) tag.style = p.style
+      if (p.font !== undefined) tag.font = p.font
+      break
+    }
     case 'tag.delete':
       next.tags = next.tags.filter((tag) => tag.id !== p.id)
       next.cardTags = next.cardTags.filter((item) => item.tagId !== p.id)

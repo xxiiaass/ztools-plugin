@@ -1,6 +1,6 @@
-import { insertIndex } from './select.js?v=21'
-import { applyLocal, applyRemote, emptyState, failImport, finishImport, flush, settle } from './state.js?v=21'
-import { viewModel } from './view.js?v=21'
+import { insertIndex } from './select.js?v=25'
+import { applyLocal, applyRemote, emptyState, failImport, finishImport, flush, settle } from './state.js?v=25'
+import { viewModel } from './view.js?v=25'
 
 const app = document.querySelector('#app')
 let state = emptyState()
@@ -8,12 +8,17 @@ let settings = { base: '', token: '' }
 let ui = {
   projectId: '',
   filter: { priority: '', tagId: '', done: '' },
+  sort: { key: 'manual', dir: 'desc' },
   openCardId: '',
   settingsOpen: false,
   menu: '',
   menuAnchor: null,
   now: new Date(),
   commentDraft: '',
+  commentImages: [],
+  tagLook: '',
+  tagDraft: { style: 'blue', font: 'sans' },
+  backupNote: '',
   composer: null,
 }
 
@@ -22,7 +27,30 @@ function id() {
 }
 
 function persist() {
-  window.__bridge?.save?.({ state, settings, projectId: ui.projectId })
+  window.__bridge?.save?.({ state, settings, projectId: ui.projectId, sort: ui.sort })
+}
+
+function backupNow() {
+  if (!settings.base || !settings.token) {
+    ui.backupNote = '先保存服务器地址和 token'
+    paint()
+    return
+  }
+  ui.backupNote = '正在发送…'
+  paint()
+  const base = settings.base.replace(/\/$/, '')
+  fetch(base + '/api/backup', {
+    method: 'POST',
+    headers: { authorization: 'Bearer ' + settings.token },
+  }).then(async (res) => {
+    if (res.status === 400) ui.backupNote = '服务器没有配置邮箱'
+    else if (!res.ok) ui.backupNote = '备份失败'
+    else ui.backupNote = '已发到备份邮箱'
+    paint()
+  }).catch(() => {
+    ui.backupNote = '备份失败'
+    paint()
+  })
 }
 
 function closeHost() {
@@ -138,7 +166,8 @@ function paint() {
       <button type="button" data-menu="project">${escape(nameOf(snap.projects, vm.projectId) || '选择项目')} ▾</button>
       <button type="button" data-act="add-project">+ 项目</button>
       <span class="grow"></span>
-      <button type="button" data-menu="filter">筛选${filterCount() ? ' ' + filterCount() : ''} ▾</button>
+      <button type="button" data-menu="filter">${escape(filterSummary())} ▾</button>
+      <button type="button" data-menu="sort">${escape(sortLabel())} ▾</button>
       <button type="button" data-menu="hidden">已隐藏 ${vm.hiddenLists.length}</button>
       <button type="button" data-act="settings">设置</button>
       <button type="button" class="host-close" data-act="close-host" aria-label="关闭">×</button>
@@ -151,6 +180,7 @@ function paint() {
     </div>
     ${ui.menu === 'project' ? projectMenu(vm) : ''}
     ${ui.menu === 'filter' ? filterMenu() : ''}
+    ${ui.menu === 'sort' ? sortMenu() : ''}
     ${ui.menu === 'hidden' ? hiddenMenu(vm) : ''}
     ${ui.menu.startsWith('pri:') ? priMenu(ui.menu.slice(4)) : ''}
     ${ui.menu.startsWith('col:') ? colMenu(ui.menu.slice(4)) : ''}
@@ -193,14 +223,15 @@ function cardView(card) {
     : (card.due.text ? `<div class="due">${escape(card.due.text)}</div>` : '')
   const subs = card.subtaskLines.map((line) => `<div class="sub">· ${escape(line)}</div>`).join('')
   const more = card.subtaskMore ? `<div class="sub">还有 ${card.subtaskMore} 个</div>` : ''
-  return `<article class="card" draggable="true" data-card="${card.id}" data-list="${card.listId}">
+  const tags = (card.tags || []).map((tag) => `<span class="${tagClass(tag)}">${escape(tag.name)}</span>`).join('')
+  return `<article class="card" draggable="${ui.sort.key === 'manual' ? 'true' : 'false'}" data-card="${card.id}" data-list="${card.listId}">
     <button type="button" class="edge" data-menu="pri:${card.id}"><i style="background:${card.edgeColor || 'transparent'}"></i></button>
     <div class="main">
       <div class="line">
         <button type="button" class="box ${card.done ? 'on' : ''}" data-act="toggle" data-card="${card.id}"></button>
         <button type="button" class="title ${card.done ? 'done' : ''}" data-act="open" data-card="${card.id}" style="border:0;background:none;padding:0;text-align:left">${escape(card.title)}</button>
       </div>
-      ${due}${subs}${more}
+      ${due}${tags ? `<div class="card-tags">${tags}</div>` : ''}${subs}${more}
     </div>
   </article>`
 }
@@ -211,19 +242,66 @@ function projectMenu(vm) {
     <button type="button" class="danger" data-act="delete-project" data-id="${vm.projectId}">删除「${escape(nameOf(state.snapshot.projects, vm.projectId))}」</button></div>`
 }
 
+function choice(act, attrs, label, active) {
+  return `<button type="button" class="${active ? 'on' : ''}" data-act="${act}" ${attrs}><span>${escape(label)}</span>${active ? '<span class="tag-check">✓</span>' : ''}</button>`
+}
+
 function filterMenu() {
-  const pri = ['', 'low', 'normal', 'high', 'urgent']
-  const labels = { '': '全部', low: '低', normal: '普通', high: '优先', urgent: '紧急' }
-  return `<div class="menu">
-    <div class="chips">${pri.map((value) => `<button type="button" data-act="filter-pri" data-value="${value}">${labels[value]}</button>`).join('')}</div>
-    <div class="chips">
-      <button type="button" data-act="filter-done" data-value="">全部</button>
-      <button type="button" data-act="filter-done" data-value="yes">完成</button>
-      <button type="button" data-act="filter-done" data-value="no">未完成</button>
-    </div>
-    ${state.snapshot.tags.map((tag) => `<button type="button" data-act="filter-tag" data-id="${tag.id}">${escape(tag.name)}</button>`).join('')}
+  const pri = [['', '全部'], ['low', '低'], ['normal', '普通'], ['high', '优先'], ['urgent', '紧急']]
+  const done = [['', '全部'], ['no', '未完成'], ['yes', '完成']]
+  const tags = [['', '不限']].concat(state.snapshot.tags.map((tag) => [tag.id, tag.name]))
+  return `<div class="menu filter-menu">
+    <p class="filter-note">各组同时满足，每组只能选一个。标签是单选。</p>
+    <div class="filter-label">优先级</div>
+    ${pri.map(([value, label]) => choice('filter-pri', `data-value="${value}"`, label, ui.filter.priority === value)).join('')}
+    <div class="filter-label">完成</div>
+    ${done.map(([value, label]) => choice('filter-done', `data-value="${value}"`, label, ui.filter.done === value)).join('')}
+    <div class="filter-label">标签</div>
+    ${tags.map(([id, label]) => choice('filter-tag', `data-id="${escape(id)}"`, label, ui.filter.tagId === id)).join('')}
     <button type="button" data-act="filter-reset">重置</button>
   </div>`
+}
+
+function sortLabel() {
+  const labels = {
+    manual: '排序',
+    'priority:desc': '优先级 高到低',
+    'priority:asc': '优先级 低到高',
+    'created:desc': '创建 新到旧',
+    'created:asc': '创建 旧到新',
+    'updated:desc': '修改 新到旧',
+    'updated:asc': '修改 旧到新',
+  }
+  if (ui.sort.key === 'manual') return labels.manual
+  return labels[`${ui.sort.key}:${ui.sort.dir}`] || labels.manual
+}
+
+function sortMenu() {
+  const items = [
+    ['manual', 'desc', '手动顺序'],
+    ['priority', 'desc', '优先级 高到低'],
+    ['priority', 'asc', '优先级 低到高'],
+    ['created', 'desc', '创建时间 新到旧'],
+    ['created', 'asc', '创建时间 旧到新'],
+    ['updated', 'desc', '修改时间 新到旧'],
+    ['updated', 'asc', '修改时间 旧到新'],
+  ]
+  return `<div class="menu">${items.map(([key, dir, label]) => {
+    const active = ui.sort.key === key && (key === 'manual' || ui.sort.dir === dir)
+    return choice('set-sort', `data-key="${key}" data-dir="${dir}"`, label, active)
+  }).join('')}</div>`
+}
+
+function filterSummary() {
+  const parts = []
+  if (ui.filter.priority) parts.push(PRI_LABEL[ui.filter.priority])
+  if (ui.filter.done === 'yes') parts.push('完成')
+  if (ui.filter.done === 'no') parts.push('未完成')
+  if (ui.filter.tagId) {
+    const tag = state.snapshot.tags.find((item) => item.id === ui.filter.tagId)
+    if (tag) parts.push(tag.name)
+  }
+  return parts.length ? `筛选 ${parts.join(' · ')}` : '筛选'
 }
 
 function hiddenMenu(vm) {
@@ -277,6 +355,10 @@ function settingsPanel() {
     <label for="set-token">连接 token</label>
     <input id="set-token" value="${escape(settings.token)}" autocomplete="off" spellcheck="false">
     <button type="button" class="btn-ok ready settings-save" data-act="save-settings">保存连接</button>
+    <div class="section-label">备份</div>
+    <button type="button" class="btn-ok ready settings-save" data-act="backup-now">立即备份</button>
+    <p class="tag-empty">马上把当前看板发到备份邮箱，不用等到周一。</p>
+    ${ui.backupNote ? `<p class="tag-empty">${escape(ui.backupNote)}</p>` : ''}
     <div class="section-label">导入备份</div>
     <input id="import-file" type="file">
     <p class="tag-empty">会换掉服务器上的全部看板，还没同步的本地改动也会丢掉。</p>
@@ -304,12 +386,17 @@ function detail(card, snap) {
       `<option value="${list.id}" ${list.id === card.listId ? 'selected' : ''}>${escape(list.name)}</option>`).join('')}</select></div>
     <div class="field-row tag-row"><span>标签</span>
       <div class="tag-cell">
-        ${assigned.map((tag) => `<span class="tag-chip">${escape(tag.name)}</span>`).join('')}
+        ${assigned.map((tag) => `<span class="${tagClass(tag)}">${escape(tag.name)}</span>`).join('')}
         <button type="button" class="tag-add" data-act="toggle-tag-pop">+</button>
         ${showTags ? `<div class="tag-pop">
-          ${snap.tags.map((tag) => `<div class="tag-option"><button type="button" class="tag-name" data-act="toggle-tag" data-id="${tag.id}"><span>${escape(tag.name)}</span>${tagIds.has(tag.id) ? '<span class="tag-check">✓</span>' : ''}</button><button type="button" class="tag-del" data-act="delete-tag" data-id="${tag.id}">删除</button></div>`).join('') || '<div class="tag-empty">还没有标签，先新建一个</div>'}
+          ${snap.tags.map((tag) => `<div class="tag-option">
+            <button type="button" class="tag-name" data-act="toggle-tag" data-id="${tag.id}"><span class="${tagClass(tag)}">${escape(tag.name)}</span>${tagIds.has(tag.id) ? '<span class="tag-check">✓</span>' : ''}</button>
+            <button type="button" class="tag-del" data-act="tag-look" data-id="${tag.id}">样式</button>
+            <button type="button" class="tag-del" data-act="delete-tag" data-id="${tag.id}">删除</button>
+          </div>${ui.tagLook === tag.id ? tagLook(tag.style, tag.font, 'tag-style', 'tag-font', `data-id="${tag.id}"`) : ''}`).join('') || '<div class="tag-empty">还没有标签，先新建一个</div>'}
           ${creatingTag
-            ? `<input id="composer-input" value="${escape(ui.composer.text || '')}" placeholder="标签名称" autocomplete="off">
+            ? `${tagLook(ui.tagDraft.style, ui.tagDraft.font, 'draft-style', 'draft-font', '')}
+               <input id="composer-input" value="${escape(ui.composer.text || '')}" placeholder="标签名称" autocomplete="off">
                <div class="composer-actions"><button type="button" class="btn-cancel" data-act="cancel-composer">取消</button><button type="button" class="btn-ok${ready}" data-act="submit-composer">确定</button></div>`
             : `<button type="button" class="sub-add" data-act="add-tag">+ 新建标签</button>`}
         </div>` : ''}
@@ -327,7 +414,8 @@ function detail(card, snap) {
       ${snap.images.filter((image) => image.commentId === comment.id).map((image) =>
         `<img alt="" src="data:${escape(image.mime)};base64,${image.dataBase64}">`).join('')}
     </div>`).join('') || '<div class="tag-empty">还没有评论</div>'}
-    <textarea id="comment-body" placeholder="写评论">${escape(ui.commentDraft)}</textarea>
+    <textarea id="comment-body" placeholder="写评论，可直接粘贴图片">${escape(ui.commentDraft)}</textarea>
+    ${(ui.commentImages || []).map((image) => `<div class="paste-preview"><img alt="" src="data:${escape(image.mime)};base64,${image.dataBase64}"><button type="button" class="tag-del" data-act="drop-paste" data-id="${image.id}">去掉</button></div>`).join('')}
     <div class="comment-bar">
       <input id="comment-images" type="file" accept="image/*" multiple>
       <button type="button" class="btn-ok ready" data-act="add-comment" data-card="${card.id}">发送</button>
@@ -351,6 +439,24 @@ function commentTime(iso) {
 }
 
 const PRI_LABEL = { low: '低', normal: '普通', high: '优先', urgent: '紧急' }
+const TAG_STYLES = ['blue', 'stone', 'moss', 'amber', 'rose', 'ink', 'focus', 'hot']
+const TAG_FONTS = [['sans', '默'], ['song', '宋'], ['kai', '楷'], ['yuan', '圆'], ['mono', '码']]
+
+function tagClass(tag) {
+  const style = TAG_STYLES.includes(tag?.style) ? tag.style : 'blue'
+  const font = TAG_FONTS.some(([id]) => id === tag?.font) ? tag.font : 'sans'
+  return `tag-chip tag-style-${style} tag-font-${font}`
+}
+
+function tagLook(style, font, actStyle, actFont, idAttr) {
+  const currentStyle = style || 'blue'
+  const currentFont = font || 'sans'
+  const swatches = TAG_STYLES.map((item) =>
+    `<button type="button" class="tag-swatch tag-style-${item}${item === currentStyle ? ' on' : ''}" data-act="${actStyle}" data-style="${item}" ${idAttr} aria-label="${item}"></button>`).join('')
+  const fonts = TAG_FONTS.map(([item, label]) =>
+    `<button type="button" class="tag-font-btn tag-font-${item}${item === currentFont ? ' on' : ''}" data-act="${actFont}" data-font="${item}" ${idAttr}>${label}</button>`).join('')
+  return `<div class="tag-look"><div class="tag-swatches">${swatches}</div><div class="tag-fonts">${fonts}</div></div>`
+}
 
 function composerBar() {
   if (!ui.composer || ['card', 'list', 'tag', 'sub', 'rename'].includes(ui.composer.kind)) return ''
@@ -404,7 +510,8 @@ function submitComposer() {
     return
   }
   if (c.kind === 'card') {
-    act({ id: id(), type: 'card.create', payload: { id: id(), listId: c.listId, title: name } })
+    const now = new Date().toISOString()
+    act({ id: id(), type: 'card.create', payload: { id: id(), listId: c.listId, title: name, createdAt: now } })
     return
   }
   if (c.kind === 'rename') {
@@ -417,7 +524,8 @@ function submitComposer() {
   }
   if (c.kind === 'tag') {
     const tagId = id()
-    act({ id: id(), type: 'tag.create', payload: { id: tagId, name } })
+    act({ id: id(), type: 'tag.create', payload: { id: tagId, name, style: ui.tagDraft.style, font: ui.tagDraft.font } })
+    ui.tagDraft = { style: 'blue', font: 'sans' }
     const current = state.snapshot.cardTags.filter((item) => item.cardId === c.cardId).map((item) => item.tagId)
     act({ id: id(), type: 'card.setTags', payload: { cardId: c.cardId, tagIds: current.concat(tagId) } })
   }
@@ -442,10 +550,6 @@ function nameOf(rows, id) {
 
 function listProject(snap, listId) {
   return snap.lists.find((list) => list.id === listId)?.projectId || ''
-}
-
-function filterCount() {
-  return ['priority', 'tagId', 'done'].filter((key) => ui.filter[key]).length
 }
 
 function toLocal(iso) {
@@ -504,11 +608,20 @@ app.addEventListener('click', (event) => {
     act({ id: id(), type: 'card.patch', payload: { id: card.id, done: !card.done } })
     return
   }
-  if (actName === 'open') { ui.openCardId = button.dataset.card; paint(); return }
-  if (actName === 'close') { ui.openCardId = ''; paint(); return }
+  if (actName === 'open') {
+    if (ui.openCardId !== button.dataset.card) ui.commentImages = []
+    ui.openCardId = button.dataset.card
+    paint()
+    return
+  }
+  if (actName === 'close') { ui.openCardId = ''; ui.commentImages = []; paint(); return }
   if (actName === 'settings') { ui.settingsOpen = true; closeMenu(); paint(); return }
   if (actName === 'close-host') { closeHost(); return }
   if (actName === 'close-settings') { ui.settingsOpen = false; paint(); return }
+  if (actName === 'backup-now') {
+    backupNow()
+    return
+  }
   if (actName === 'save-settings') {
     settings = { base: document.querySelector('#set-base').value.trim(), token: document.querySelector('#set-token').value.trim() }
     persist()
@@ -531,6 +644,18 @@ app.addEventListener('click', (event) => {
     paint(); return
   }
   if (actName === 'filter-reset') { ui.filter = { priority: '', tagId: '', done: '' }; paint(); return }
+  if (actName === 'set-sort') {
+    ui.sort = { key: button.dataset.key, dir: button.dataset.dir || 'desc' }
+    closeMenu()
+    paint()
+    persist()
+    return
+  }
+  if (actName === 'drop-paste') {
+    ui.commentImages = (ui.commentImages || []).filter((image) => image.id !== button.dataset.id)
+    paint()
+    return
+  }
   if (actName === 'delete-list') {
     if (confirm('删除这个列表和里面的卡片？')) act({ id: id(), type: 'list.delete', payload: { id: button.dataset.id } })
     return
@@ -559,7 +684,28 @@ app.addEventListener('click', (event) => {
     act({ id: id(), type: 'card.setTags', payload: { cardId: ui.openCardId, tagIds } })
     return
   }
-  if (actName === 'add-tag') { ui.tagPicker = true; openComposer('tag', { cardId: ui.openCardId }); return }
+  if (actName === 'add-tag') {
+    ui.tagPicker = true
+    ui.tagDraft = { style: 'blue', font: 'sans' }
+    openComposer('tag', { cardId: ui.openCardId })
+    return
+  }
+  if (actName === 'tag-look') {
+    ui.tagPicker = true
+    ui.tagLook = ui.tagLook === button.dataset.id ? '' : button.dataset.id
+    paint()
+    return
+  }
+  if (actName === 'tag-style' || actName === 'tag-font') {
+    ui.tagPicker = true
+    const payload = { id: button.dataset.id }
+    if (actName === 'tag-style') payload.style = button.dataset.style
+    else payload.font = button.dataset.font
+    act({ id: id(), type: 'tag.patch', payload })
+    return
+  }
+  if (actName === 'draft-style') { ui.tagDraft.style = button.dataset.style; ui.tagPicker = true; paint(); return }
+  if (actName === 'draft-font') { ui.tagDraft.font = button.dataset.font; ui.tagPicker = true; paint(); return }
   if (actName === 'delete-tag') {
     ui.tagPicker = true
     if (confirm('删除这个标签？所有卡片上的这个标签都会去掉。')) {
@@ -574,11 +720,13 @@ app.addEventListener('click', (event) => {
   if (actName === 'add-comment') {
     const body = document.querySelector('#comment-body').value
     const files = [...document.querySelector('#comment-images').files]
+    const pasted = ui.commentImages || []
     Promise.all(files.map((file) => file.arrayBuffer().then((buf) => ({
       id: id(), mime: file.type || 'application/octet-stream', dataBase64: bytesToBase64(new Uint8Array(buf)),
     })))).then((images) => {
       ui.commentDraft = ''
-      act({ id: id(), type: 'comment.create', payload: { id: id(), cardId: button.dataset.card, body, images } })
+      ui.commentImages = []
+      act({ id: id(), type: 'comment.create', payload: { id: id(), cardId: button.dataset.card, body, images: images.concat(pasted) } })
     }).catch(() => {
       state = { ...state, syncError: '同步失败，改动还在本地' }
       paint()
@@ -610,6 +758,25 @@ app.addEventListener('focusout', (event) => {
     paintAfterType = false
     paint()
   }, 0)
+})
+
+app.addEventListener('paste', (event) => {
+  if (event.target.id !== 'comment-body') return
+  const items = [...(event.clipboardData?.items || [])].filter((item) => item.type.startsWith('image/'))
+  if (!items.length) return
+  event.preventDefault()
+  ui.commentDraft = event.target.value
+  Promise.all(items.map((item) => {
+    const file = item.getAsFile()
+    if (!file) return null
+    return file.arrayBuffer().then((buf) => ({
+      id: id(), mime: file.type || 'image/png', dataBase64: bytesToBase64(new Uint8Array(buf)),
+    }))
+  })).then((images) => {
+    ui.commentImages = (ui.commentImages || []).concat(images.filter(Boolean))
+    paint()
+    document.querySelector('#comment-body')?.focus()
+  })
 })
 
 app.addEventListener('input', (event) => {
@@ -780,6 +947,7 @@ if (saved?.state?.snapshot && Array.isArray(saved.state.snapshot.projects)) {
 }
 if (saved?.settings) settings = saved.settings
 if (typeof saved?.projectId === 'string') ui.projectId = saved.projectId
+if (saved?.sort?.key) ui.sort = { key: saved.sort.key, dir: saved.sort.dir || 'desc' }
 if (!state.snapshot.projects.length) {
   const projectId = id()
   const listId = id()

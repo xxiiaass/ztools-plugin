@@ -12,6 +12,17 @@ function setRevision(db, value) {
   `).run(String(value))
 }
 
+const TAG_STYLES = new Set(['blue', 'stone', 'moss', 'amber', 'rose', 'ink', 'focus', 'hot'])
+const TAG_FONTS = new Set(['sans', 'song', 'kai', 'yuan', 'mono'])
+
+function tagStyle(value) {
+  return TAG_STYLES.has(value) ? value : 'blue'
+}
+
+function tagFont(value) {
+  return TAG_FONTS.has(value) ? value : 'sans'
+}
+
 function nextPosition(db, sql, ...params) {
   const row = db.prepare(sql).get(...params)
   return row && row.max != null ? row.max + 1 : 0
@@ -71,23 +82,25 @@ function applyOne(db, op) {
     }
     case 'card.create': {
       if (db.prepare(`SELECT 1 FROM cards WHERE id = ?`).get(p.id)) return
-      const position = nextPosition(db, `SELECT MAX(position) AS max FROM cards WHERE list_id = ?`, p.listId)
+      const now = p.createdAt || new Date().toISOString()
+      db.prepare(`UPDATE cards SET position = position + 1 WHERE list_id = ?`).run(p.listId)
       db.prepare(`
-        INSERT INTO cards(id, list_id, title, done, priority, due_at, position)
-        VALUES (?, ?, ?, 0, 'normal', NULL, ?)
-      `).run(p.id, p.listId, p.title, position)
+        INSERT INTO cards(id, list_id, title, done, priority, due_at, position, created_at, updated_at)
+        VALUES (?, ?, ?, 0, 'normal', NULL, 0, ?, ?)
+      `).run(p.id, p.listId, p.title, now, now)
       return
     }
     case 'card.patch': {
       const card = db.prepare(`SELECT * FROM cards WHERE id = ?`).get(p.id)
       if (!card) throw new Error('missing card ' + p.id)
       db.prepare(`
-        UPDATE cards SET title = ?, done = ?, priority = ?, due_at = ? WHERE id = ?
+        UPDATE cards SET title = ?, done = ?, priority = ?, due_at = ?, updated_at = ? WHERE id = ?
       `).run(
         p.title !== undefined ? p.title : card.title,
         p.done !== undefined ? (p.done ? 1 : 0) : card.done,
         p.priority !== undefined ? p.priority : card.priority,
         p.dueAt !== undefined ? p.dueAt : card.due_at,
+        new Date().toISOString(),
         p.id,
       )
       return
@@ -101,6 +114,7 @@ function applyOne(db, op) {
       ids.splice(index, 0, p.id)
       const update = db.prepare(`UPDATE cards SET list_id = ?, position = ? WHERE id = ?`)
       ids.forEach((id, i) => update.run(p.listId, i, id))
+      db.prepare(`UPDATE cards SET updated_at = ? WHERE id = ?`).run(new Date().toISOString(), p.id)
       const old = db.prepare(`SELECT id FROM cards WHERE list_id = ? ORDER BY position, id`).all(card.list_id)
       const fix = db.prepare(`UPDATE cards SET position = ? WHERE id = ?`)
       old.forEach((row, i) => fix.run(i, row.id))
@@ -129,8 +143,20 @@ function applyOne(db, op) {
       return
     case 'tag.create':
       if (db.prepare(`SELECT 1 FROM tags WHERE id = ?`).get(p.id)) return
-      db.prepare(`INSERT INTO tags(id, name) VALUES (?, ?)`).run(p.id, p.name)
+      db.prepare(`INSERT INTO tags(id, name, style, font) VALUES (?, ?, ?, ?)`).run(
+        p.id, p.name, tagStyle(p.style), tagFont(p.font),
+      )
       return
+    case 'tag.patch': {
+      const tag = db.prepare(`SELECT * FROM tags WHERE id = ?`).get(p.id)
+      if (!tag) throw new Error('missing tag ' + p.id)
+      db.prepare(`UPDATE tags SET style = ?, font = ? WHERE id = ?`).run(
+        p.style !== undefined ? tagStyle(p.style) : tag.style,
+        p.font !== undefined ? tagFont(p.font) : tag.font,
+        p.id,
+      )
+      return
+    }
     case 'tag.delete':
       db.prepare(`DELETE FROM card_tags WHERE tag_id = ?`).run(p.id)
       db.prepare(`DELETE FROM tags WHERE id = ?`).run(p.id)

@@ -4,7 +4,8 @@ import path from 'node:path'
 import express from 'express'
 import { fileIsKanbanBackup, openDb, readSnapshot } from './db.js'
 import { applyOps } from './ops.js'
-import { snapshotFile } from './backup.js'
+import nodemailer from 'nodemailer'
+import { readSmtp, sendBackup, snapshotFile } from './backup.js'
 
 export function createApp(db, options) {
   const state = options.box || { db }
@@ -52,6 +53,34 @@ export function createApp(db, options) {
     res.download(file, 'board.db', () => {
       fs.rmSync(file, { force: true })
     })
+  })
+
+  app.post('/api/backup', async (req, res) => {
+    try {
+      const smtp = readSmtp(state.db)
+      const mailer = options.mailer || (smtp
+        ? nodemailer.createTransport({
+          host: smtp.host,
+          port: smtp.port || 465,
+          secure: smtp.port ? Number(smtp.port) === 465 : true,
+          auth: { user: smtp.user, pass: smtp.pass },
+        })
+        : null)
+      const result = await sendBackup({
+        db: state.db,
+        dbPath: options.dbPath,
+        smtp,
+        mailer,
+        now: new Date(),
+      })
+      if (result.skipped) {
+        res.status(400).json({ error: 'no_smtp' })
+        return
+      }
+      res.json({ ok: true })
+    } catch (err) {
+      res.status(500).json({ error: 'backup_failed', message: err.message })
+    }
   })
 
   app.post('/api/import', express.raw({ type: 'application/octet-stream', limit: '80mb' }), (req, res) => {

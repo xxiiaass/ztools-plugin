@@ -62,6 +62,7 @@ test('新卡片默认普通且未完成，移动后停在指定序号', () => {
   assert.equal(card.priority, 'normal')
   assert.equal(card.done, 0)
   applyOp(db, { id: 'c2', type: 'card.create', payload: { id: 'k2', listId: 'l', title: '另一张' } })
-  applyOp(db, { id: 'm', type: 'card.move', payload: { id: 'k2', listId: 'l', index: 0 } })
   assert.deepEqual(cardIds(db, 'l'), ['k2', 'k'])
+  applyOp(db, { id: 'm', type: 'card.move', payload: { id: 'k2', listId: 'l', index: 1 } })
+  assert.deepEqual(cardIds(db, 'l'), ['k', 'k2'])
 })
